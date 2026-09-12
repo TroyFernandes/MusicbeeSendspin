@@ -38,6 +38,7 @@ namespace MusicBeePlugin.SendSpin
         
         // Presentation timestamp tracking (microseconds into the stream)
         private long _presentationTimestamp;
+        private long _initialRelTsUs; // _presentationTimestamp at decode start (1× pacing baseline)
         private int _sourceSampleRate;
 
         public event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
@@ -163,6 +164,8 @@ namespace MusicBeePlugin.SendSpin
                         // Adjust presentation timestamp for seek position
                         _presentationTimestamp = (long)(startPositionSeconds * 1000000);
                     }
+                    // Baseline for 1× pacing: how much audio has been produced vs wall clock.
+                    _initialRelTsUs = _presentationTimestamp;
 
                     // Initialize encoder with OUTPUT sample rate (after resampling)
                     _encoder = CreateEncoder(_settings.AudioCodec, _outputSampleRate, info.chans);
@@ -381,6 +384,20 @@ namespace MusicBeePlugin.SendSpin
                                         channels,
                                         16
                                     ));
+                                }
+
+                                // Pace to 1× real-time. BASS decodes far faster than playback,
+                                // so without this the whole track floods _audioQueue in seconds and
+                                // overflows the speaker's jitter buffer (plays a moment, then cuts
+                                // out). Hold the producer to ~20 ms of audio per 20 ms of wall clock
+                                // so the paced pump downstream always keeps its ~500 ms lead.
+                                long nowUs = (long)(_streamClock!.Elapsed.TotalMilliseconds * 1000.0);
+                                long producedUs = _presentationTimestamp - _initialRelTsUs;
+                                long aheadUs = producedUs - nowUs;
+                                if (aheadUs > 0)
+                                {
+                                    long sleepMs = aheadUs / 1000;
+                                    if (sleepMs > 0) Thread.Sleep((int)Math.Min(sleepMs, 250));
                                 }
                             }
                         }

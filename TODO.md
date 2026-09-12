@@ -14,8 +14,8 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
       state machine; port the SDK's `Connection/Noise/` wrapper into `SendSpin/`. **Do not hand-roll crypto.**
 - [x] Key inversion noted: the plugin is the Sendspin **client** but the Noise **responder** — the server
       sends `noise/handshake` msg 1 (carrying `psk_id`), the client resolves the **Sentinel PSK**, sends msg 2.
-- [ ] **Windows:** run `tests/noise-net48-smoke` → `noise-net48-smoke.exe`. Proves libsodium + the KKpsk2 handshake actually run on net48 (build-only can't show that). Compiles clean here (Linux); exe is self-sufficient — bundles `Native/libsodium.dll` (x64). Expect 2× PASS.
-      - [ ] (build-only verifiable on the server; the exe must be run on a 64-bit Windows box — no .NET 8 SDK needed, net48 ships with Windows)
+- [x] **Windows:** `tests/noise-net48-smoke` → `noise-net48-smoke.exe` proves libsodium + the KKpsk2 handshake actually run on net48 (build-only can't show that). exe is self-sufficient — bundles `Native/libsodium.dll` (x64). **DONE: 2× PASS on Windows (2026-09-12).**
+      - [x] Ran `noise-net48-smoke.exe` on a 64-bit Windows box — `PASS ChaChaPoly`, `PASS AesGcm`.
 
 ## 1. Component A — MusicBee render device (front-end)
 - [ ] Verify exact render-device method names + signatures in `MusicBeeInterface.cs` / `Plugins/MusicBeePlugin.cs`

@@ -21,13 +21,26 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 
 ## 1. Component A — MusicBee render device (front-end)
 
-- [ ] Verify exact render-device method names + signatures in `MusicBeeInterface.cs` / `Plugins/MusicBeePlugin.cs`
-      (cross-check the HQPlayer plugin's `MusicBeeHQP.vb`).
-- [ ] `string[] GetRenderingDevices()` → returns one device (name from settings, default "Music Assistant (Sendspin)").
-- [ ] `bool SetActiveRenderingDevice(string name)` → on activate: (re)establish source-role connection; on deactivate: tear down.
-- [ ] `bool PlayToDevice(string url, int streamHandle)` → drive audio capture + feed the source connection.
-- [ ] Raise `MB_SendNotification(CallbackType.RenderingDevicesChanged)` on list change.
-- [ ] Forward transport state: pause / resume / stop / track change / volume+mute (decide local vs forward; document).
+- [x] Method surface verified against HQPlayer's `MusicBeeHQP.vb` and implemented on the plugin's
+      `partial class Plugin` (there is no `Plugins/MusicBeePlugin.cs` in this repo — `SendSpinPlugin.cs`
+      IS the plugin class): `GetRenderingDevices()`, `GetRenderingSettings()` (continuous=0 so MusicBee
+      calls PlayToDevice per track), `SetActiveRenderingDevice(name)`, `PlayToDevice(url, handle)`,
+      `QueueNext(url)` (no-op — the next track arrives as a fresh PlayToDevice).
+- [x] `GetRenderingDevices()` → one device from settings (default "Music Assistant (Sendspin)"); empty when disabled.
+- [x] `SetActiveRenderingDevice(name)` → activate resolves the MA server URL (manual host first, then mDNS,
+      retrying every 3s while nothing is found) and starts the SourceConnection; deactivate tears down
+      capture + connection. Switching to another output device deactivates ours.
+- [x] `PlayToDevice(url, streamHandle)` → `SourceRenderDevice` restarts the capture on MusicBee's decode
+      stream (handle NOT owned — Stop must never close a MusicBee stream) and feeds chunks into the
+      connection; the input stream opens lazily on the first packet while the server's start
+      authorization stands. (commit 62d244b)
+- [x] `RenderingDevicesChanged` raised at plugin startup and whenever the render-device settings change.
+- [x] Transport state forwarding (documented decisions): pause/stop → capture stops + `client_stream/end`;
+      resume → capture restarts on the remembered PlayToDevice handle (unowned) or a fresh plugin-owned
+      `Player_OpenStreamHandle` stream, opening a fresh input stream; track change → continuous source
+      stream (timestamps keep advancing; aiosendspin tolerates the small restart gap); **volume/mute are
+      NOT forwarded** — the source role has no volume channel, Music Assistant applies its own target
+      volume. Local playback is silent by MusicBee's render-device routing (no `Player_SetMute` hack).
 
 ## 2. Component B — Sendspin `source@v1` client (new)
 
@@ -116,27 +129,41 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 
 ## 3. Audio path
 
-- [ ] Wire `AudioDataAvailable` (existing capture) → source connection chunk queue (Opus 48k stereo default).
+- [x] Wired via `SourceRenderDevice`: `AudioCaptureService` (Opus 48k stereo default) events are
+      re-stamped into the ServerClock domain (one Stopwatch epoch per activation → monotonic across
+      per-track capture restarts) and fed to `SourceConnection.EnqueueEncodedAudio`. Tested end to end
+      with a fake capture (real BASS path verifies on Windows in section 6).
 
 ## 4. Settings
 
-- [ ] Target: auto-discover (mDNS) and/or manual `host:port`.
-- [ ] Render-device name (default "Music Assistant (Sendspin)").
-- [ ] Audio codec (default Opus).
-- [ ] Leave existing speaker-mode settings untouched.
+- [x] Target fields exist and are used by the resolver: `SourceAutoDiscover` (mDNS) and manual
+      `SourceServerHost`/`SourceServerPort` (host wins when set; port 0 → discovered/default 8927). (commit dbd59c7)
+- [x] Render-device name setting `RenderDeviceName` (default "Music Assistant (Sendspin)"); feeds both
+      the device list and the client/hello name.
+- [x] Audio codec for the source stream reuses the existing `AudioCodec`/`SampleRate`/`Channels`/`BitDepth`
+      settings (default opus/48k/2ch/16); `StreamParams` flows into `client_stream/start`.
+- [x] Existing speaker-mode settings untouched (additive only).
+- [ ] **Settings dialog UI for the source section**: enable toggle, device name, host/port, auto-discover
+      checkbox — and the **pairing token display** (currently only logged at startup; the operator needs
+      a copyable token in the dialog to pair with MA).
 
 ## 5. Wire-up
 
-- [ ] `Plugins/MusicBeePlugin.cs` — expose render-device methods + wire new services; send `RenderingDevicesChanged`.
-- [ ] `SendSpinPlugin.cs` — settings + lifecycle (start/stop render device + source connection on activation).
-- [ ] `PluginSettings.cs` — new settings fields.
-- [ ] `MusicBeeSendSpin.csproj` — new deps.
+- [x] Render-device methods exposed on the plugin class (`SendSpinPlugin.cs`, `partial class Plugin` —
+      the task file's `Plugins/MusicBeePlugin.cs` does not exist in this repo) + `RenderingDevicesChanged`.
+- [x] `SendSpinPlugin.cs` — lifecycle: render device created at startup (persistent identity +
+      pairing store under `Setting_GetPersistentStoragePath()`), play-state forwarding, deactivation
+      on close/shutdown, settings-change restart.
+- [x] `PluginSettings.cs` — source-role fields (commit dbd59c7).
+- [x] `MusicBeeSendSpin.csproj` — Noise.NET + libsodium (commit 5dff4b0); no further deps needed.
 
 ## 6. Verify
 
 - [x] `dotnet build` succeeds (0 errors).
 - [x] Tests written as I go: tests/pairing-tests (29 checks), tests/source-connection (60 checks — in-process fake Sendspin server incl. the full pairing + streaming flow), noise-interop + live-handshake-probe still green.
-- [ ] On Windows + MusicBee + a running Music Assistant:
+- [ ] On Windows + MusicBee + a running Music Assistant (⚠️ open risk: HQPlayer is `PluginType.DataStream`,
+      this plugin is `General` — if the render device does not appear in Preferences → Player → Output,
+      try switching `_about.Type` to `DataStream`):
   - [ ] "Music Assistant (Sendspin)" render device appears in Preferences → Player → Output.
   - [ ] Selecting it + playing → audio on MA targets, **local output silent without `Player_SetMute`**.
   - [ ] pause/resume/stop + track changes behave on the MA side.

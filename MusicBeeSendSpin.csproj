@@ -48,11 +48,19 @@
     <PackageReference Include="Concentus.OggFile" Version="1.0.4" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Noise.NET" Version="1.0.0" />
+    <PackageReference Include="libsodium" Version="1.0.22" />
+    <PackageReference Include="System.Memory" Version="4.5.4" />
   </ItemGroup>
 
   <!-- Native libraries that need to be included -->
   <ItemGroup>
     <None Include="Native\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The interop test has its own csproj; keep its files out of the plugin build. -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
   </ItemGroup>
 
 </Project>

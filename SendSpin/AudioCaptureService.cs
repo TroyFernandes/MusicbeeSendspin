@@ -31,7 +31,13 @@ namespace MusicBeePlugin.SendSpin
         
         // Audio buffer settings
         private const int BufferSizeMs = 20; // 20ms chunks for low latency
-        private byte[]? _audioBuffer;
+        // Buffers: the stream is read as 32-bit FLOAT (mixer + decode sources are float; BASS
+        // converts 16-bit sources when BASS_DATA_FLOAT is requested) and converted to the 16-bit
+        // LE PCM the encoders expect. _pcmBuffer holds the converted 16-bit data (20 ms).
+        private byte[]? _floatBuffer;     // raw float bytes from BASS (2× the 16-bit size)
+        private float[]? _floatSamples;   // float view of _floatBuffer
+        private short[]? _pcmShorts;      // converted samples
+        private byte[]? _pcmBuffer;       // 16-bit LE PCM handed to the encoder (20 ms)
         private int _bufferSize;
         
         // Encoder for Opus/FLAC encoding
@@ -93,8 +99,13 @@ namespace MusicBeePlugin.SendSpin
                     }
                     
                     // Calculate buffer size
+                    // Allocate the conversion buffers (16-bit PCM handed to the encoder) plus the
+                    // float-side buffers: float bytes are 2× the 16-bit size (4 B vs 2 B per sample).
                     _bufferSize = CalculateBufferSize(_settings.SampleRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
-                    _audioBuffer = new byte[_bufferSize];
+                    _pcmBuffer = new byte[_bufferSize];
+                    _floatBuffer = new byte[_bufferSize * 2];
+                    _floatSamples = new float[_bufferSize / 2];
+                    _pcmShorts = new short[_bufferSize / 2];
                     
                     // Initialize encoder based on settings
                     _encoder = CreateEncoder(_settings.AudioCodec);
@@ -192,9 +203,12 @@ namespace MusicBeePlugin.SendSpin
                 _encoder?.Dispose();
                 _encoder = CreateEncoder(settings.AudioCodec);
                 
-                // Recalculate buffer size
+                // Recalculate buffer size (16-bit PCM + float-side conversion buffers)
                 _bufferSize = CalculateBufferSize(_settings.SampleRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
-                _audioBuffer = new byte[_bufferSize];
+                _pcmBuffer = new byte[_bufferSize];
+                _floatBuffer = new byte[_bufferSize * 2];
+                _floatSamples = new float[_bufferSize / 2];
+                _pcmShorts = new short[_bufferSize / 2];
             }
         }
 
@@ -257,12 +271,17 @@ namespace MusicBeePlugin.SendSpin
             {
                 try
                 {
-                    if (_audioBuffer == null) break;
+                    if (_floatBuffer == null) break;
                     
                     readAttempts++;
                     
-                    // Read audio data from stream
-                    var bytesRead = Bass.ReadStreamData(streamToRead, _audioBuffer, _bufferSize);
+                    // Read 32-BIT FLOAT data from the stream (the mixer is created with
+                    // BASS_SAMPLE_FLOAT and the decode source is typically float too — BASS
+                    // converts non-float streams when BASS_DATA_FLOAT is requested, so this is
+                    // correct for every source). The bytes are NOT the 16-bit PCM the encoder
+                    // expects: they are converted below. Feeding float bytes straight in was the
+                    // \"extremely loud static\" bug on the render-device path.
+                    var bytesRead = Bass.ReadStreamData(streamToRead, _floatBuffer, _floatBuffer.Length);
                     
                     // Log periodically
                     if ((DateTime.Now - lastLogTime).TotalSeconds >= 5)
@@ -275,7 +294,27 @@ namespace MusicBeePlugin.SendSpin
                     if (bytesRead > 0)
                     {
                         successfulReads++;
-                        totalBytesRead += bytesRead;
+
+                        // Convert float [-1, 1] to clamped 16-bit LE PCM for the encoder.
+                        int sampleCount = bytesRead / 4;
+                        if (sampleCount > _floatSamples.Length)
+                            sampleCount = _floatSamples.Length;
+                        if (sampleCount == 0)
+                        {
+                            Thread.Sleep(5);
+                            continue;
+                        }
+                        Buffer.BlockCopy(_floatBuffer, 0, _floatSamples, 0, sampleCount * 4);
+                        for (int i = 0; i < sampleCount; i++)
+                        {
+                            float f = _floatSamples[i];
+                            if (f > 1f) f = 1f;
+                            else if (f < -1f) f = -1f;
+                            _pcmShorts[i] = (short)(f * 32767f);
+                        }
+                        int pcmBytes = sampleCount * 2;
+                        Buffer.BlockCopy(_pcmShorts, 0, _pcmBuffer, 0, pcmBytes);
+                        totalBytesRead += pcmBytes; // converted 16-bit bytes (drives pacing/stats)
 
                         // Get timestamp for this audio chunk
                         var timestamp = GetTimestampMicroseconds();
@@ -284,13 +323,13 @@ namespace MusicBeePlugin.SendSpin
                         byte[] encodedData;
                         if (_encoder != null)
                         {
-                            encodedData = _encoder.Encode(_audioBuffer, bytesRead);
+                            encodedData = _encoder.Encode(_pcmBuffer, pcmBytes);
                         }
                         else
                         {
                             // Raw PCM
-                            encodedData = new byte[bytesRead];
-                            Array.Copy(_audioBuffer, encodedData, bytesRead);
+                            encodedData = new byte[pcmBytes];
+                            Array.Copy(_pcmBuffer, encodedData, pcmBytes);
                         }
                         
                         // Raise event with encoded audio data

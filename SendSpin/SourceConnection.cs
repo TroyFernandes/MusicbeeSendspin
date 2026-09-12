@@ -28,6 +28,24 @@ namespace MusicBeePlugin.SendSpin
         Pairing,
         /// <summary><c>source@v1</c> granted; clock synchronized and reported available. Accepts server start commands.</summary>
         Ready,
+        /// <summary>An input stream is open and audio chunks are flowing.</summary>
+        Streaming,
+    }
+
+    /// <summary>The input-stream format announced in <c>client_stream/start</c>.</summary>
+    public sealed class SourceStreamParams
+    {
+        /// <summary>Codec: 'opus', 'flac', or 'pcm'.</summary>
+        public string Codec { get; set; } = "opus";
+        public int SampleRate { get; set; } = 48000;
+        public int Channels { get; set; } = 2;
+        /// <summary>Ignored for opus (aiosendspin decodes at the 16-bit canonical).</summary>
+        public int BitDepth { get; set; } = 16;
+
+        /// <summary>The spec's per-chunk cap is 150 ms of codec data, one codec unit per chunk.</summary>
+        public int MaxPacketBytes => Codec == "opus"
+            ? 128_000 / 8 * 150 / 1000                      // 150 ms at the 128 kbps default bitrate
+            : SampleRate * Channels * (BitDepth / 8) * 150 / 1000;
     }
 
     /// <summary>Args for the <see cref="SourceConnection.SourceRoleChanged"/> event.</summary>
@@ -63,6 +81,8 @@ namespace MusicBeePlugin.SendSpin
     /// </remarks>
     internal sealed class SourceConnection : IDisposable
     {
+        private const byte SourceAudioChunkMessageType = 0x0C;
+
         private readonly Uri _serverUri;
         private readonly SendspinIdentity _identity;
         private readonly PairingStore _pairingStore;
@@ -200,6 +220,7 @@ namespace MusicBeePlugin.SendSpin
             try { _cts.Dispose(); } catch { }
             _burstTimer?.Dispose();
             _resyncTimer?.Dispose();
+            _audioPumpTimer?.Dispose();
             _sendQueue?.CompleteAdding();
         }
 
@@ -277,6 +298,9 @@ namespace MusicBeePlugin.SendSpin
             _clockConverged = false;
             _bestRttUs = long.MaxValue;
             StreamStartAuthorized = false;
+            IsStreamOpen = false;
+            while (_audioQueue.TryDequeue(out _)) { }
+            DisposeTimer(ref _audioPumpTimer);
             _burstRemaining = 0;
             DisposeTimer(ref _burstTimer);
             DisposeTimer(ref _resyncTimer);
@@ -538,9 +562,11 @@ namespace MusicBeePlugin.SendSpin
             }
             else if (_sourceGranted)
             {
-                // Role revoked: stop streaming (the stream end goes out with the audio-path
-                // handling) and drop any pending start authorization.
+                // Role revoked: end the open stream (client_stream/end), drop any pending
+                // start authorization, and stop the audio pump.
                 _sourceGranted = false;
+                if (IsStreamOpen)
+                    EndInputStream();
                 SetState(SourceConnectionState.Unpaired);
                 DisposeTimer(ref _resyncTimer);
                 SourceRoleChanged?.Invoke(this, new SourceRoleEventArgs(false));
@@ -712,6 +738,132 @@ namespace MusicBeePlugin.SendSpin
             _log("[Source] sent client/state: available=" + available.ToString().ToLowerInvariant());
         }
 
+
+        // ------------------------------------------------------------------
+        // Input stream: server authorization + MusicBee playback drive the open/close;
+        // audio chunks flow only while the stream is open.
+        // ------------------------------------------------------------------
+
+        /// <summary>The stream format announced in <c>client_stream/start</c>. Defaults to Opus 48 kHz stereo.</summary>
+        public SourceStreamParams StreamParams { get; set; } = new SourceStreamParams();
+
+        /// <summary>Whether an input stream is currently open (client_stream/start sent, not yet ended).</summary>
+        public bool IsStreamOpen { get; private set; }
+
+        // Bounded chunk queue: the capture feeds 20 ms Opus packets at 1x; a stalled writer must
+        // not grow the queue unboundedly (spec: drop buffered backlog beyond a small bound and
+        // resume from live capture). 50 chunks ≈ 1 s.
+        private const int MaxQueuedChunks = 50;
+        private readonly ConcurrentQueue<(long CaptureLocalUs, byte[] Packet)> _audioQueue = new();
+        private Timer? _audioPumpTimer;
+        private long _droppedBacklogChunks;
+
+        /// <summary>
+        /// Feeds one encoded audio packet. <paramref name="captureLocalUs"/> is the capture time of
+        /// the packet's FIRST sample in the <see cref="ServerClock"/> monotonic-µs domain; it is
+        /// converted to the server time domain (captureLocalUs + <see cref="ClockOffsetUs"/>) when
+        /// the chunk is released to the wire, so the freshest offset estimate applies.
+        /// </summary>
+        /// <remarks>
+        /// The input stream opens lazily on the FIRST packet while the server's start
+        /// authorization stands: the render device starts streaming exactly when MusicBee
+        /// actually plays, not when Music Assistant presses start. Packets arriving without an
+        /// open stream (server never said start, or role revoked) are dropped.
+        /// </remarks>
+        public void EnqueueEncodedAudio(byte[] packet, long captureLocalUs)
+        {
+            if (!_sourceGranted || !StreamStartAuthorized)
+                return;
+
+            if (!IsStreamOpen)
+                OpenInputStream();
+
+            // Spec bounds: one codec unit per chunk, ≤150 ms, ≥5 ms. The capture feeds 20 ms Opus
+            // packets; a larger packet means a misconfigured encoder — log and send anyway.
+            if (packet.Length > StreamParams.MaxPacketBytes)
+                _log($"[Source] oversized chunk ({packet.Length} B > {StreamParams.MaxPacketBytes} B for 150 ms) — sending anyway");
+
+            _audioQueue.Enqueue((captureLocalUs, packet));
+            while (_audioQueue.Count > MaxQueuedChunks && _audioQueue.TryDequeue(out _))
+                _droppedBacklogChunks++;
+            if (_droppedBacklogChunks > 0 && _droppedBacklogChunks % 50 == 0)
+                _log($"[Source] backlog overflow: dropped {_droppedBacklogChunks} stale chunks total");
+        }
+
+        /// <summary>MusicBee playback stopped/paused: ends the input stream (resume opens a fresh one).</summary>
+        public void NotifyPlaybackStopped()
+        {
+            if (IsStreamOpen)
+                EndInputStream();
+        }
+
+        private void OpenInputStream()
+        {
+            var payload = new JObject
+            {
+                ["source"] = new JObject
+                {
+                    ["codec"] = StreamParams.Codec,
+                    ["channels"] = StreamParams.Channels,
+                    ["sample_rate"] = StreamParams.SampleRate,
+                    ["bit_depth"] = StreamParams.BitDepth,
+                },
+            };
+            // Wire type uses underscores (client_stream/start) — see the reference implementations.
+            EnqueueJson(new JObject { ["type"] = "client_stream/start", ["payload"] = payload });
+            IsStreamOpen = true;
+            _droppedBacklogChunks = 0;
+            while (_audioQueue.TryDequeue(out _)) { }
+            SetState(SourceConnectionState.Streaming);
+            _log($"[Source] input stream open: {StreamParams.Codec} {StreamParams.SampleRate} Hz {StreamParams.Channels} ch");
+        }
+
+        private void EndInputStream()
+        {
+            EnqueueJson(new JObject { ["type"] = "client_stream/end", ["payload"] = new JObject() });
+            IsStreamOpen = false;
+            StreamStartAuthorized = false;
+            while (_audioQueue.TryDequeue(out _)) { }
+            DisposeTimer(ref _audioPumpTimer);
+            if (_state == SourceConnectionState.Streaming)
+                SetState(SourceConnectionState.Ready);
+            _log("[Source] input stream ended");
+        }
+
+        /// <summary>Releases queued chunks to the wire, stamping each with its server-domain capture time.</summary>
+        private void PumpAudioOnce()
+        {
+            if (!IsStreamOpen)
+                return;
+            long offset = _clockOffsetUs;
+            int released = 0;
+            while (_audioQueue.TryDequeue(out var chunk))
+            {
+                long serverTsUs = chunk.CaptureLocalUs + offset;
+                Enqueue(OutItem.Binary(BuildSourceAudioChunk(serverTsUs, chunk.Packet)));
+                released++;
+            }
+            if (released > 0 && released % 25 == 0)
+                _log($"[Source] released {released} chunks");
+        }
+
+        /// <summary>Wire format: [0x0C][8-byte big-endian server-clock µs][encoded audio].</summary>
+        internal static byte[] BuildSourceAudioChunk(long serverTsUs, byte[] packet)
+        {
+            var frame = new byte[9 + packet.Length];
+            frame[0] = SourceAudioChunkMessageType;
+            frame[1] = (byte)(serverTsUs >> 56);
+            frame[2] = (byte)(serverTsUs >> 48);
+            frame[3] = (byte)(serverTsUs >> 40);
+            frame[4] = (byte)(serverTsUs >> 32);
+            frame[5] = (byte)(serverTsUs >> 24);
+            frame[6] = (byte)(serverTsUs >> 16);
+            frame[7] = (byte)(serverTsUs >> 8);
+            frame[8] = (byte)serverTsUs;
+            packet.CopyTo(frame, 9);
+            return frame;
+        }
+
         // ------------------------------------------------------------------
         // server/command (source)
         // ------------------------------------------------------------------
@@ -724,8 +876,6 @@ namespace MusicBeePlugin.SendSpin
             string? command = source["command"]?.Value<string>();
             _log("[Source] server/command: source." + command);
 
-            // Streaming behavior lands with the audio path; for now authorization is tracked
-            // so the audio path can be driven by tests.
             switch (command)
             {
                 case "start":
@@ -734,11 +884,21 @@ namespace MusicBeePlugin.SendSpin
                         _log("[Source] ignoring start: source@v1 not granted");
                         return;
                     }
-                    StreamStartAuthorized = true;
-                    StreamStartRequested?.Invoke(this, EventArgs.Empty);
+                    // Idempotent per spec: a start while the stream is open must not restart it.
+                    if (!StreamStartAuthorized)
+                    {
+                        StreamStartAuthorized = true;
+                        // 20 ms pump coalesces the 1x capture feed to the wire.
+                        _audioPumpTimer ??= new Timer(_ => PumpAudioOnce(), null,
+                            TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20));
+                        StreamStartRequested?.Invoke(this, EventArgs.Empty);
+                    }
                     break;
 
                 case "stop":
+                    // Server-initiated stop: end the open stream, drop the queue, clear the grant.
+                    if (IsStreamOpen)
+                        EndInputStream();
                     StreamStartAuthorized = false;
                     StreamStopRequested?.Invoke(this, EventArgs.Empty);
                     break;
@@ -752,7 +912,6 @@ namespace MusicBeePlugin.SendSpin
         public event EventHandler? StreamStartRequested;
         /// <summary>Raised when the server commands this source to stop streaming.</summary>
         public event EventHandler? StreamStopRequested;
-
         // ------------------------------------------------------------------
         // Outbound plumbing
         // ------------------------------------------------------------------

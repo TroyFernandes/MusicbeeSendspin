@@ -16,6 +16,7 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
       sends `noise/handshake` msg 1 (carrying `psk_id`), the client resolves the **Sentinel PSK**, sends msg 2.
 - [x] **Windows:** `tests/noise-net48-smoke` → `noise-net48-smoke.exe` proves libsodium + the KKpsk2 handshake actually run on net48 (build-only can't show that). exe is self-sufficient — bundles `Native/libsodium.dll` (x64). **DONE: 2× PASS on Windows (2026-09-12).**
       - [x] Ran `noise-net48-smoke.exe` on a 64-bit Windows box — `PASS ChaChaPoly`, `PASS AesGcm`.
+- [x] **Live handshake verified vs real MA server (2026-09-12):** net8 probe (`tests/live-handshake-probe`) completed the full KKpsk2 handshake against 192.168.1.10:8927 (`25519_ChaChaPoly_SHA256`, unpaired Sentinel PSK). The ported transport interoperates with aiosendspin — Component B (SourceConnection) de-risked.
 
 ## 1. Component A — MusicBee render device (front-end)
 - [ ] Verify exact render-device method names + signatures in `MusicBeeInterface.cs` / `Plugins/MusicBeePlugin.cs`

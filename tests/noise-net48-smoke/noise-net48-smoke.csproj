@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>noise-net48-smoke</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Only the platform-probe part of the plugin's Noise support (self-contained, no Newtonsoft). -->
+    <Compile Include="../../SendSpin/Noise/NoiseSupport.cs" Link="Src/NoiseSupport.cs" />
+    <Compile Include="../../SendSpin/Noise/IsExternalInit.cs" Link="Src/IsExternalInit.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Noise.NET" Version="1.0.0" />
+    <PackageReference Include="libsodium" Version="1.0.22" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Ship the same bundled win-x64 libsodium the plugin uses, so the exe is self-sufficient on Windows. -->
+    <None Include="../../Native/**/*.*" CopyToOutputDirectory="PreserveNewest" LinkBase="Native/" />
+  </ItemGroup>
+</Project>

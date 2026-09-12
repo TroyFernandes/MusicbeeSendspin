@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>pairing-tests</AssemblyName>
+    <RootNamespace>pairing_tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The plugin's Noise + pairing sources under test. -->
+    <Compile Include="../../SendSpin/Noise/WireFraming.cs" Link="Src/WireFraming.cs" />
+    <Compile Include="../../SendSpin/Noise/NoiseSupport.cs" Link="Src/NoiseSupport.cs" />
+    <Compile Include="../../SendSpin/Noise/NoiseWireFraming.cs" Link="Src/NoiseWireFraming.cs" />
+    <Compile Include="../../SendSpin/Noise/PairingStore.cs" Link="Src/PairingStore.cs" />
+    <Compile Include="../../SendSpin/Noise/PairingToken.cs" Link="Src/PairingToken.cs" />
+    <Compile Include="../noise-interop/TestNoiseServer.cs" Link="Src/TestNoiseServer.cs" />
+    <Compile Include="../noise-interop/TestBase64Url.cs" Link="Src/TestBase64Url.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Noise.NET" Version="1.0.0" />
+    <PackageReference Include="libsodium" Version="1.0.22" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>

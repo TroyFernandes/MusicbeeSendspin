@@ -38,11 +38,15 @@ namespace MusicBeePlugin.SendSpin.Noise
         private Transport? _transport;
         private byte[]? _handshakeHash; // prior handshake hash (re-handshake prologue)
         private bool _transportReady;
+        // The category of the PSK that authenticated the CURRENT session (Sentinel fallback,
+        // stored Pairing, or stored LongTerm). The source role's client-side trust gate reads this.
+        private PskCategory? _matchedPskCategory;
 
         // Re-handshake deferred reply (committed on the send path via EncodeDeferredReply).
         private byte[]? _pendingReplyJson;   // the noise/handshake msg2 JSON (base64 data)
         private Transport? _pendingTransport;
         private byte[]? _pendingHash;
+        private PskCategory? _pendingCategory;
 
         // Fragment reassembly.
         private MemoryStream? _reassemblyBuffer;
@@ -60,6 +64,14 @@ namespace MusicBeePlugin.SendSpin.Noise
         public NoiseCipherSuite Suite => _suite;
         public string? ServerId => _serverId;
         public bool IsTransportReady => _transportReady;
+
+        /// <summary>
+        /// The category of the PSK that authenticated the current session — Sentinel (unpaired,
+        /// fallback), Pairing (bootstrap), or LongTerm (paired). Null until the first handshake
+        /// completes. The source role's client-side trust gate reads this; the re-handshake commit
+        /// updates it when the session's keys are swapped.
+        /// </summary>
+        public PskCategory? MatchedPskCategory => _matchedPskCategory;
 
         // --- Lifecycle ---
 
@@ -118,6 +130,8 @@ namespace MusicBeePlugin.SendSpin.Noise
             _pendingReplyJson = null;
             _pendingTransport = null;
             _pendingHash = null;
+            _matchedPskCategory = null;
+            _pendingCategory = null;
 
             lock (_fragmentGate)
             {
@@ -277,6 +291,7 @@ namespace MusicBeePlugin.SendSpin.Noise
                             _transport = transport;
                             _handshakeHash = handshakeHash;
                             _transportReady = true;
+                            _matchedPskCategory = resolved.Category;
                             return new InboundFrameResult
                             {
                                 Replies = new List<WireFrame> { WireFrame.FromText(replyJson) },
@@ -288,6 +303,7 @@ namespace MusicBeePlugin.SendSpin.Noise
                         _pendingReplyJson = Encoding.UTF8.GetBytes(replyJson);
                         _pendingTransport = transport;
                         _pendingHash = handshakeHash;
+                        _pendingCategory = resolved.Category;
                         return InboundFrameResult.ForDeferredReply();
                     }
                 }
@@ -317,11 +333,12 @@ namespace MusicBeePlugin.SendSpin.Noise
             foreach (WireFrame f in EncryptOutbound(replyMsg.AsMemory()))
                 frames.Add(f);
 
-            // Commit the key swap.
+            // Commit the key swap (and the new session's PSK category with it).
             if (_pendingTransport is not null)
             {
                 _transport = _pendingTransport;
                 _handshakeHash = _pendingHash;
+                _matchedPskCategory = _pendingCategory;
             }
             _pendingReplyJson = null;
             _pendingTransport = null;

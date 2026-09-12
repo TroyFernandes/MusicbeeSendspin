@@ -28,10 +28,10 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 - [ ] Forward transport state: pause / resume / stop / track change / volume+mute (decide local vs forward; document).
 
 ## 2. Component B — Sendspin `source@v1` client (new)
-- [ ] Add `Noise.NET` (+ `libsodium`) to `MusicBeeSendSpin.csproj` (verify net48 restore).
-- [ ] Port `Connection/Noise/` (+ `Framing/`) wrapper into `SendSpin/Noise/` (NoiseWireFraming, NoiseConstants,
-      NoiseCipherSuite, NoisePsk, SentinelPskResolver, Base64UrlText, SendspinIdentity, NoiseHandshakeJson, WireFrame, IWireFraming).
-      Use reflection-based System.Text.Json (drop the source-gen `MessageSerializerContext`).
+- [x] Add `Noise.NET` (+ `libsodium`) to `MusicBeeSendSpin.csproj` (verify net48 restore).
+- [x] Port `Connection/Noise/` (+ `Framing/`) wrapper into `SendSpin/Noise/` (NoiseWireFraming, NoiseConstants,
+      NoiseCipherSuite, NoisePsk, SentinelPskResolver, Base64UrlText, SendspinIdentity, WireFrame, IWireFraming).
+      JSON envelopes use Newtonsoft (net48 has no System.Text.Json) — same field order as the spec schemas.
 - [ ] `SendSpin/SourceConnection.cs` — WebSocket to the MA **server** (client role).
 - [ ] Sentinel KKpsk2 handshake (client/responder) per `spec/connection.md`.
 - [ ] `client/hello` — advertise `source@v1` + codecs actually sent.

@@ -277,7 +277,7 @@ namespace MusicBeePlugin.SendSpin
             var name = record.Name.ToString();
             
             // Log all sendspin-related records for debugging
-            if (name.Contains("sendspin", StringComparison.OrdinalIgnoreCase))
+            if (name.IndexOf("sendspin", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 _logger($"Found sendspin record: {record.GetType().Name} - {name}");
             }

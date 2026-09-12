@@ -27,6 +27,8 @@ namespace MusicBeePlugin
         // Server-initiated connection components
         private static SpeakerDiscoveryService? _discoveryService;
         private static SpeakerConnectionManager? _connectionManager;
+        // Relative timestamp (µs from stream start) of the last decoded chunk in the current session
+        private static long _lastChunkRelTs;
         
         private static string? _settingsPath;
         private static bool _isInitialized;
@@ -337,6 +339,12 @@ namespace MusicBeePlugin
                     // Small delay to let MusicBee settle on the new track
                     Thread.Sleep(50);
                     StartAudioCapture();
+                    
+                    // Server-initiated: re-anchor + stream/start (TrackChanging sent stream/clear)
+                    if (_connectionManager != null && _settings?.ConnectionMode == ConnectionMode.ServerInitiated)
+                    {
+                        BroadcastStreamStartToSpeakers();
+                    }
                 }
             }
             catch (Exception ex)
@@ -356,9 +364,16 @@ namespace MusicBeePlugin
                 // Stop current decode (but keep connection alive)
                 _directDecodeService?.Stop();
                 _audioCaptureService?.PrepareForTrackChange();
+                _lastChunkRelTs = 0;
                 
                 // Tell server to prepare for track change (sends stream/clear)
                 _server?.PrepareForTrackChange();
+                
+                // Server-initiated: drop buffered audio on all speakers (seek/track change)
+                if (_connectionManager != null && _settings?.ConnectionMode == ConnectionMode.ServerInitiated)
+                {
+                    _connectionManager.BroadcastStreamClear();
+                }
             }
             catch (Exception ex)
             {
@@ -407,12 +422,13 @@ namespace MusicBeePlugin
                         }
                         if (hasServerInitiated && _connectionManager != null)
                         {
-                            BroadcastPlaybackStateToSpeakers("paused");
+                            BroadcastStreamEndToSpeakers();
                         }
                         break;
                         
                     case PlayState.Stopped:
                         StopAudioCapture();
+                        _lastChunkRelTs = 0;
                         if (hasClientInitiated && _server != null)
                         {
                             _server.SetPlaybackState(SendSpinPlaybackState.Stopped);
@@ -627,8 +643,26 @@ namespace MusicBeePlugin
             // If music is playing, send stream/start to this speaker
             if (_mbApiInterface.Player_GetPlayState() == PlayState.Playing)
             {
-                // Send stream/start to the newly connected speaker
-                SendStreamStartToSpeaker(connection);
+                var fileUrl = _mbApiInterface.NowPlaying_GetFileUrl();
+                var position = string.IsNullOrEmpty(fileUrl) ? 0.0 : _mbApiInterface.Player_GetPosition() / 1000.0;
+                var decoderRunning = _directDecodeService != null && _directDecodeService.IsCapturing;
+                
+                long anchorUs;
+                if (decoderRunning && _lastChunkRelTs > 0)
+                {
+                    // Mid-join: map the decoder's current in-flight timestamp
+                    // to ~300 ms from now so this speaker is in sync with the
+                    // audio the others are already hearing.
+                    anchorUs = ServerClock.NowUs() + 300_000 - _lastChunkRelTs;
+                }
+                else
+                {
+                    // Decoder will start (fresh) at `position`; its first chunk
+                    // is timestamped position*1e6 µs — map that to ~600 ms from now.
+                    anchorUs = ServerClock.NowUs() + 600_000 - (long)(position * 1_000_000);
+                }
+                
+                SendStreamStartToSpeaker(connection, anchorUs);
                 
                 // Make sure audio capture is running
                 // Use Task.Run to avoid blocking the connection thread
@@ -636,10 +670,8 @@ namespace MusicBeePlugin
                 {
                     if (_directDecodeService != null && !_directDecodeService.IsCapturing)
                     {
-                        var fileUrl = _mbApiInterface.NowPlaying_GetFileUrl();
                         if (!string.IsNullOrEmpty(fileUrl))
                         {
-                            var position = _mbApiInterface.Player_GetPosition() / 1000.0;
                             LogInfo("OnSpeakerConnected", $"Starting audio capture for {fileUrl}");
                             _directDecodeService.Start(fileUrl, position);
                         }
@@ -654,65 +686,41 @@ namespace MusicBeePlugin
             _discoveryService?.SetSpeakerConnected(connection.Speaker.Id, false);
         }
         
-        private static void SendStreamStartToSpeaker(SpeakerConnection connection)
+        private static void SendStreamStartToSpeaker(SpeakerConnection connection, long anchorUs)
         {
-            // Send stream/start message
-            var streamStart = new Newtonsoft.Json.Linq.JObject
-            {
-                ["type"] = "stream/start",
-                ["payload"] = new Newtonsoft.Json.Linq.JObject
-                {
-                    ["player"] = new Newtonsoft.Json.Linq.JObject
-                    {
-                        ["codec"] = "opus",
-                        ["sample_rate"] = 48000,
-                        ["channels"] = 2,
-                        ["bit_depth"] = 16
-                    }
-                }
-            };
+            // SetStreamAnchor clears any stale queued chunks and (re)schedules
+            // the decoder's relative timestamps in the server clock domain.
+            connection.SetStreamAnchor(anchorUs);
+            connection.SendStreamStart("opus", 48000, 2, 16);
             
-            LogInfo("SendStreamStart", $"Sending stream/start to {connection.Speaker.Name}");
-            connection.SendMessageAsync(streamStart).ConfigureAwait(false);
+            LogInfo("SendStreamStart", $"Sending stream/start (anchor {anchorUs}) to {connection.Speaker.Name}");
         }
         
         private static void BroadcastStreamStartToSpeakers()
         {
             if (_connectionManager == null) return;
             
-            var streamStart = new Newtonsoft.Json.Linq.JObject
-            {
-                ["type"] = "stream/start",
-                ["payload"] = new Newtonsoft.Json.Linq.JObject
-                {
-                    ["player"] = new Newtonsoft.Json.Linq.JObject
-                    {
-                        ["codec"] = "opus",
-                        ["sample_rate"] = 48000,
-                        ["channels"] = 2,
-                        ["bit_depth"] = 16
-                    }
-                }
-            };
+            // The decoder (re)starts at the current playback position; its first
+            // chunk is timestamped position*1e6 µs. Anchor the stream so that
+            // timestamp maps to ~600 ms from now.
+            var positionSeconds = _mbApiInterface.Player_GetPosition() / 1000.0;
+            long anchor = ServerClock.NowUs() + 600_000 - (long)(positionSeconds * 1_000_000);
             
-            LogInfo("BroadcastStreamStart", $"Broadcasting stream/start to {_connectionManager.Connections.Count} speakers");
-            _connectionManager.BroadcastMessageAsync(streamStart).ConfigureAwait(false);
+            LogInfo("BroadcastStreamStart", $"Re-anchoring stream (pos {positionSeconds:F2}s) to {_connectionManager.Connections.Count} speakers");
+            foreach (var conn in _connectionManager.Connections)
+            {
+                conn.SetStreamAnchor(anchor);
+                conn.SendStreamStart("opus", 48000, 2, 16);
+            }
         }
         
         private static void BroadcastPlaybackStateToSpeakers(string state)
         {
             if (_connectionManager == null) return;
             
-            var message = new Newtonsoft.Json.Linq.JObject
-            {
-                ["type"] = "playback/state",
-                ["payload"] = new Newtonsoft.Json.Linq.JObject
-                {
-                    ["state"] = state
-                }
-            };
-            
-            _connectionManager.BroadcastMessageAsync(message).ConfigureAwait(false);
+            // "playback/state" is not a valid SendSpin message — stream/end
+            // tells the speakers to stop (valid for pause).
+            _connectionManager.BroadcastStreamEnd();
         }
         
         private static void BroadcastStreamEndToSpeakers()
@@ -806,12 +814,16 @@ namespace MusicBeePlugin
                 // Send to client-initiated server
                 _server?.SendAudioData(e.Data, e.Timestamp, e.SampleRate, e.Channels, e.BitDepth);
                 
-                // Also send to server-initiated connections
+                // Also send to server-initiated connections (paced delivery —
+                // each connection releases a chunk ~500 ms before its play time,
+                // so the speaker always has its 25-chunk playback buffer).
                 if (_connectionManager != null && _settings?.ConnectionMode == ConnectionMode.ServerInitiated)
                 {
-                    // Build the binary message with timestamp
-                    var binaryData = BuildAudioBinaryMessage(e.Data, e.Timestamp);
-                    _connectionManager.BroadcastBinaryAsync(binaryData).ConfigureAwait(false);
+                    _lastChunkRelTs = e.Timestamp;
+                    foreach (var conn in _connectionManager.Connections)
+                    {
+                        conn.EnqueueAudioChunk(e.Timestamp, e.Data);
+                    }
                 }
             }
             catch (Exception ex)
@@ -820,34 +832,6 @@ namespace MusicBeePlugin
             }
         }
         
-        /// <summary>
-        /// Build a binary audio message with timestamp for SendSpin protocol.
-        /// </summary>
-        private static byte[] BuildAudioBinaryMessage(byte[] audioData, long timestampMicros)
-        {
-            // Binary message format:
-            // Byte 0: Message type (0x04 = player audio)
-            // Bytes 1-8: Timestamp (big-endian int64, microseconds)
-            // Bytes 9+: Audio data
-            
-            var message = new byte[1 + 8 + audioData.Length];
-            message[0] = 0x04; // Player audio message type
-            
-            // Write timestamp as big-endian
-            var timestamp = timestampMicros;
-            message[1] = (byte)(timestamp >> 56);
-            message[2] = (byte)(timestamp >> 48);
-            message[3] = (byte)(timestamp >> 40);
-            message[4] = (byte)(timestamp >> 32);
-            message[5] = (byte)(timestamp >> 24);
-            message[6] = (byte)(timestamp >> 16);
-            message[7] = (byte)(timestamp >> 8);
-            message[8] = (byte)timestamp;
-            
-            Buffer.BlockCopy(audioData, 0, message, 9, audioData.Length);
-            
-            return message;
-        }
 
         private bool _wasLocallyMuted = false;
         private bool _localMuteApplied = false;

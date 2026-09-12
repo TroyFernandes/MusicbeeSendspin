@@ -26,6 +26,7 @@ namespace MusicBeePlugin.SendSpin
         private CheckedListBox _speakerListBox = null!;
         private Button _refreshSpeakersButton = null!;
         private Label _speakerStatusLabel = null!;
+        private GroupBox _modeGroup = null!;
         private RadioButton _modeClientInitiatedRadio = null!;
         private RadioButton _modeServerInitiatedRadio = null!;
         
@@ -53,6 +54,9 @@ namespace MusicBeePlugin.SendSpin
         // Advanced settings
         private NumericUpDown _bufferSizeNumeric = null!;
         private CheckBox _logDebugCheckbox = null!;
+        
+        // Speakers tab
+        private CheckBox _speakerModeEnabledCheckbox = null!;
         
         // Music Assistant (source render device) tab
         private CheckBox _assistantEnabledCheckbox = null!;
@@ -172,8 +176,19 @@ namespace MusicBeePlugin.SendSpin
                 Padding = new Padding(10)
             };
             
+            // Legacy speaker-mode master switch
+            var speakerSwitchPanel = new Panel { Dock = DockStyle.Top, Height = 60, Padding = new Padding(10) };
+            _speakerModeEnabledCheckbox = new CheckBox
+            {
+                Text = "Enable speaker mode (legacy) — Sendspin speakers connect to MusicBee",
+                AutoSize = true,
+                Location = new Point(10, 10)
+            };
+            _speakerModeEnabledCheckbox.CheckedChanged += SpeakerModeEnabledChanged;
+            speakerSwitchPanel.Controls.Add(_speakerModeEnabledCheckbox);
+            
             // Connection mode group
-            var modeGroup = new GroupBox
+            _modeGroup = new GroupBox
             {
                 Text = "Connection Mode",
                 Dock = DockStyle.Top,
@@ -197,8 +212,8 @@ namespace MusicBeePlugin.SendSpin
             };
             _modeServerInitiatedRadio.CheckedChanged += ConnectionModeChanged;
             
-            modeGroup.Controls.Add(_modeClientInitiatedRadio);
-            modeGroup.Controls.Add(_modeServerInitiatedRadio);
+            _modeGroup.Controls.Add(_modeClientInitiatedRadio);
+            _modeGroup.Controls.Add(_modeServerInitiatedRadio);
             
             // Speaker list group
             var speakerGroup = new GroupBox
@@ -253,9 +268,13 @@ namespace MusicBeePlugin.SendSpin
                 ForeColor = SystemColors.GrayText
             };
             
+            // Docking is applied in reverse collection order: the last control added takes the
+            // topmost edge. Add order speakerGroup(Fill) → modeGroup(Top) → infoLabel(Bottom) →
+            // switch(Top) renders as: switch on top, then info, then mode group, speakers fill.
             mainPanel.Controls.Add(speakerGroup);
-            mainPanel.Controls.Add(modeGroup);
+            mainPanel.Controls.Add(_modeGroup);
             mainPanel.Controls.Add(infoLabel);
+            mainPanel.Controls.Add(speakerSwitchPanel);
             
             _speakersTab.Controls.Add(mainPanel);
         }
@@ -678,6 +697,13 @@ namespace MusicBeePlugin.SendSpin
             _assistantTab.Controls.Add(layout);
         }
 
+        private void SpeakerModeEnabledChanged(object? sender, EventArgs e)
+        {
+            bool enabled = _speakerModeEnabledCheckbox.Checked;
+            _modeGroup.Enabled = enabled;
+            _speakerStatusLabel.Enabled = enabled;
+        }
+
         private void CreateAdvancedTab()
         {
             _advancedTab = new TabPage("Advanced");
@@ -746,6 +772,10 @@ namespace MusicBeePlugin.SendSpin
 
         private void LoadSettings()
         {
+            // Speakers
+            _speakerModeEnabledCheckbox.Checked = _settings.SpeakerModeEnabled;
+            _modeGroup.Enabled = _settings.SpeakerModeEnabled;
+            
             // Connection mode
             _modeClientInitiatedRadio.Checked = _settings.ConnectionMode == ConnectionMode.ClientInitiated;
             _modeServerInitiatedRadio.Checked = _settings.ConnectionMode == ConnectionMode.ServerInitiated;
@@ -801,6 +831,9 @@ namespace MusicBeePlugin.SendSpin
 
         private void SaveSettings()
         {
+            // Speakers
+            _settings.SpeakerModeEnabled = _speakerModeEnabledCheckbox.Checked;
+            
             // Connection mode
             _settings.ConnectionMode = _modeServerInitiatedRadio.Checked 
                 ? ConnectionMode.ServerInitiated 

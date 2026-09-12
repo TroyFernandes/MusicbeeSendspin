@@ -135,6 +135,8 @@ namespace MusicBeePlugin
         /// </summary>
         private static void EnsureDiscoveryServiceRunning()
         {
+            if (_settings?.SpeakerModeEnabled != true)
+                return; // speaker mode off: no legacy speaker discovery
             if (_discoveryService == null)
             {
                 _discoveryService = new SpeakerDiscoveryService(LogDiscovery);
@@ -320,11 +322,14 @@ namespace MusicBeePlugin
                     (sender, args) => Configure(IntPtr.Zero)
                 );
                 
-                _mbApiInterface.MB_AddMenuItem(
-                    "mnuTools/SendSpin Speakers",
-                    "SendSpin: Manage Speakers",
-                    (sender, args) => ShowSpeakerManager()
-                );
+                if (_settings?.SpeakerModeEnabled == true)
+                {
+                    _mbApiInterface.MB_AddMenuItem(
+                        "mnuTools/SendSpin Speakers",
+                        "SendSpin: Manage Speakers",
+                        (sender, args) => ShowSpeakerManager()
+                    );
+                }
                 
                 LogInfo("PluginStartup", "SendSpin plugin initialized successfully");
             }
@@ -747,27 +752,36 @@ namespace MusicBeePlugin
                         _settings = new PluginSettings();
                     }
                     
-                    // Initialize Group Manager
-                    _groupManager = new GroupManager();
-                    
-                    // Initialize SendSpin Server
-                    _server = new SendSpinServer(_settings);
-                    _server.ClientConnected += OnClientConnected;
-                    _server.ClientDisconnected += OnClientDisconnected;
-                    
-                    // Initialize Audio Capture Service (original approach - kept for reference)
-                    _audioCaptureService = new AudioCaptureService(_settings);
-                    _audioCaptureService.AudioDataAvailable += OnAudioDataAvailable;
-                    
-                    // Initialize Direct Decode Service (alternative approach - decodes files directly)
-                    _directDecodeService = new DirectDecodeService(_settings);
-                    _directDecodeService.AudioDataAvailable += OnAudioDataAvailable;
-                    
-                    // Start the server if enabled
-                    if (_settings.EnableServer)
+                    // Legacy speaker mode (sendspin speakers dial into our server). Off by default —
+                    // the Music Assistant render device is the primary path now.
+                    if (_settings.SpeakerModeEnabled)
                     {
-                        _server.StartAsync().GetAwaiter().GetResult();
-                        LogInfo("InitializeComponents", $"SendSpin server started on port {_settings.ServerPort}");
+                        // Initialize Group Manager
+                        _groupManager = new GroupManager();
+                        
+                        // Initialize SendSpin Server
+                        _server = new SendSpinServer(_settings);
+                        _server.ClientConnected += OnClientConnected;
+                        _server.ClientDisconnected += OnClientDisconnected;
+                        
+                        // Initialize Audio Capture Service (original approach - kept for reference)
+                        _audioCaptureService = new AudioCaptureService(_settings);
+                        _audioCaptureService.AudioDataAvailable += OnAudioDataAvailable;
+                        
+                        // Initialize Direct Decode Service (alternative approach - decodes files directly)
+                        _directDecodeService = new DirectDecodeService(_settings);
+                        _directDecodeService.AudioDataAvailable += OnAudioDataAvailable;
+                        
+                        // Start the server if enabled
+                        if (_settings.EnableServer)
+                        {
+                            _server.StartAsync().GetAwaiter().GetResult();
+                            LogInfo("InitializeComponents", $"SendSpin server started on port {_settings.ServerPort}");
+                        }
+                    }
+                    else
+                    {
+                        LogInfo("InitializeComponents", "Speaker mode disabled (SpeakerModeEnabled=false) — Music Assistant render device only");
                     }
                     
                     // Music Assistant render device (source role) — additive to speaker mode
@@ -791,8 +805,22 @@ namespace MusicBeePlugin
                 {
                     if (_settings == null) return;
                     
-                    // Handle connection mode changes
-                    if (_settings.ConnectionMode == ConnectionMode.ServerInitiated)
+                    if (!_settings.SpeakerModeEnabled)
+                    {
+                        // Render device only: make sure no legacy speaker machinery is running.
+                        if (_server != null || _connectionManager != null || _directDecodeService != null)
+                        {
+                            LogInfo("ApplySettings", "Speaker mode disabled — stopping legacy speaker services");
+                            Task.Run(async () =>
+                            {
+                                _directDecodeService?.Stop();
+                                _audioCaptureService?.Stop();
+                                await _connectionManager?.DisconnectAllAsync();
+                                await _server?.StopAsync();
+                            }).Wait(TimeSpan.FromSeconds(5));
+                        }
+                    }
+                    else if (_settings.ConnectionMode == ConnectionMode.ServerInitiated)
                     {
                         // Stop the client-initiated server if running (do this on a background thread to avoid deadlock)
                         if (_server != null && _server.IsRunning)

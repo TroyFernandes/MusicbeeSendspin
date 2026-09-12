@@ -62,6 +62,11 @@ namespace MusicBeePlugin.SendSpin
         // Audio Capture Mode
         public bool UseDirectDecode { get; set; } = true; // Use direct file decode instead of Player_OpenStreamHandle
         
+        // Legacy speaker mode (plugin acts as a Sendspin server that speakers dial into). Off by
+        // default: the Music Assistant render device is the primary path now. Re-enable here (or
+        // in the Speakers tab) to stream directly to Sendspin speakers again.
+        public bool SpeakerModeEnabled { get; set; } = false;
+        
         // Source role (render device / Music Assistant) — MusicBee acts as a Sendspin client to MA
         public bool RenderDeviceEnabled { get; set; } = true; // Expose the Music Assistant render device
         public string RenderDeviceName { get; set; } = "Music Assistant (Sendspin)"; // Name shown in MusicBee
@@ -125,6 +130,7 @@ namespace MusicBeePlugin.SendSpin
             return new PluginSettings
             {
                 ConnectionMode = ConnectionMode,
+                SpeakerModeEnabled = SpeakerModeEnabled,
                 SelectedSpeakerIds = new List<string>(SelectedSpeakerIds),
                 EnableServer = EnableServer,
                 ServerName = ServerName,

@@ -23,6 +23,11 @@ namespace MusicBeePlugin.SendSpin
         
         private readonly object _syncLock = new object();
         private readonly System.Diagnostics.Stopwatch _clock;
+        // Wall-clock baseline for 1× real-time pacing, restarted on every Start(). For a render
+        // device the plugin IS the playback clock: MusicBee decodes the handed stream as fast as
+        // it is read, so an unpaced loop would race through the track (observed: a full track's
+        // PCM consumed in ~6× real-time, then the stream runs dry) and playback would end early.
+        private readonly System.Diagnostics.Stopwatch _paceClock = System.Diagnostics.Stopwatch.StartNew();
         
         // Audio buffer settings
         private const int BufferSizeMs = 20; // 20ms chunks for low latency
@@ -60,6 +65,7 @@ namespace MusicBeePlugin.SendSpin
                 {
                     _streamHandle = streamHandle;
                     _ownsStreamHandle = ownsStreamHandle;
+                    _paceClock.Restart();
                     
                     // Get stream info
                     if (!Bass.TryGetStreamInformation(streamHandle, out var sampleRate, out var channels, out var codec))
@@ -270,7 +276,7 @@ namespace MusicBeePlugin.SendSpin
                     {
                         successfulReads++;
                         totalBytesRead += bytesRead;
-                        
+
                         // Get timestamp for this audio chunk
                         var timestamp = GetTimestampMicroseconds();
                         
@@ -297,6 +303,20 @@ namespace MusicBeePlugin.SendSpin
                                 _settings.Channels,
                                 _settings.BitDepth
                             ));
+                        }
+
+                        // Pace to 1× real-time (same rationale as DirectDecodeService's decode loop,
+                        // but here it ALSO drives MusicBee's render-device playback clock: MusicBee
+                        // decodes as fast as we pull, so without pacing the track would race to its
+                        // end and the capture would run dry seconds into playback).
+                        long bytesPerSecond = _settings.SampleRate * _settings.Channels * Math.Max(1, _settings.BitDepth / 8);
+                        long elapsedUs = _paceClock.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000);
+                        long producedUs = totalBytesRead * 1_000_000 / bytesPerSecond;
+                        long aheadUs = producedUs - elapsedUs;
+                        if (aheadUs > 0)
+                        {
+                            long sleepMs = aheadUs / 1000;
+                            if (sleepMs > 0) Thread.Sleep((int)Math.Min(sleepMs, 250));
                         }
                     }
                     else if (bytesRead == 0)

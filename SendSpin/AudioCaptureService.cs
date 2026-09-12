@@ -271,7 +271,13 @@ namespace MusicBeePlugin.SendSpin
             {
                 try
                 {
-                    if (_floatBuffer == null) break;
+                    // Snapshot: nullable fields don't narrow, and the loop runs on its own thread.
+                    var floatBuffer = _floatBuffer;
+                    var floatSamples = _floatSamples;
+                    var pcmShorts = _pcmShorts;
+                    var pcmBuffer = _pcmBuffer;
+                    if (floatBuffer is null || floatSamples is null || pcmShorts is null || pcmBuffer is null)
+                        break;
                     
                     readAttempts++;
                     
@@ -281,7 +287,7 @@ namespace MusicBeePlugin.SendSpin
                     // correct for every source). The bytes are NOT the 16-bit PCM the encoder
                     // expects: they are converted below. Feeding float bytes straight in was the
                     // \"extremely loud static\" bug on the render-device path.
-                    var bytesRead = Bass.ReadStreamData(streamToRead, _floatBuffer, _floatBuffer.Length);
+                    var bytesRead = Bass.ReadStreamData(streamToRead, floatBuffer, floatBuffer.Length);
                     
                     // Log periodically
                     if ((DateTime.Now - lastLogTime).TotalSeconds >= 5)
@@ -297,23 +303,23 @@ namespace MusicBeePlugin.SendSpin
 
                         // Convert float [-1, 1] to clamped 16-bit LE PCM for the encoder.
                         int sampleCount = bytesRead / 4;
-                        if (sampleCount > _floatSamples.Length)
-                            sampleCount = _floatSamples.Length;
+                        if (sampleCount > floatSamples.Length)
+                            sampleCount = floatSamples.Length;
                         if (sampleCount == 0)
                         {
                             Thread.Sleep(5);
                             continue;
                         }
-                        Buffer.BlockCopy(_floatBuffer, 0, _floatSamples, 0, sampleCount * 4);
+                        Buffer.BlockCopy(floatBuffer, 0, floatSamples, 0, sampleCount * 4);
                         for (int i = 0; i < sampleCount; i++)
                         {
-                            float f = _floatSamples[i];
+                            float f = floatSamples[i];
                             if (f > 1f) f = 1f;
                             else if (f < -1f) f = -1f;
-                            _pcmShorts[i] = (short)(f * 32767f);
+                            pcmShorts[i] = (short)(f * 32767f);
                         }
                         int pcmBytes = sampleCount * 2;
-                        Buffer.BlockCopy(_pcmShorts, 0, _pcmBuffer, 0, pcmBytes);
+                        Buffer.BlockCopy(pcmShorts, 0, pcmBuffer, 0, pcmBytes);
                         totalBytesRead += pcmBytes; // converted 16-bit bytes (drives pacing/stats)
 
                         // Get timestamp for this audio chunk
@@ -323,13 +329,13 @@ namespace MusicBeePlugin.SendSpin
                         byte[] encodedData;
                         if (_encoder != null)
                         {
-                            encodedData = _encoder.Encode(_pcmBuffer, pcmBytes);
+                            encodedData = _encoder.Encode(pcmBuffer, pcmBytes);
                         }
                         else
                         {
                             // Raw PCM
                             encodedData = new byte[pcmBytes];
-                            Array.Copy(_pcmBuffer, encodedData, pcmBytes);
+                            Array.Copy(pcmBuffer, encodedData, pcmBytes);
                         }
                         
                         // Raise event with encoded audio data
@@ -344,7 +350,7 @@ namespace MusicBeePlugin.SendSpin
                             ));
                         }
 
-                        // Pace to 1× real-time (same rationale as DirectDecodeService's decode loop,
+                        // Pace to 1× real-time (as in the plugin's decode loops;
                         // but here it ALSO drives MusicBee's render-device playback clock: MusicBee
                         // decodes as fast as we pull, so without pacing the track would race to its
                         // end and the capture would run dry seconds into playback).

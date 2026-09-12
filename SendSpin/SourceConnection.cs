@@ -59,8 +59,7 @@ namespace MusicBeePlugin.SendSpin
     /// <summary>
     /// Sendspin <b>source@v1</b> client connection: the plugin dials a Music Assistant
     /// <b>server</b> over WebSocket and speaks the encrypted Sendspin protocol as the Noise
-    /// <b>responder</b> (the inverse of <see cref="SpeakerConnection"/>, which acts as a Sendspin
-    /// server for speakers).
+    /// <b>responder</b> (the server is the Noise initiator).
     /// </summary>
     /// <remarks>
     /// Wire drive (proven against a live MA server by tests/live-handshake-probe):

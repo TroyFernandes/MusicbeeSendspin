@@ -177,6 +177,12 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
   - [x] track changes clean (PlayToDevice restarts the capture on the new decode stream, paced 1×);
         stop ends the stream (source.stop → input stream ended). Fix history this session:
         float→16-bit PCM conversion (static bug), 1× capture pacing, libsodium preload.
-  - [~] existing speaker mode still works — code untouched, now behind `SpeakerModeEnabled` (default
-        OFF). Re-enable via the Speakers tab checkbox to verify the old path again; deletion deferred
-        until that re-verification.
+- [x] **2026-09-12 19:45 — legacy speaker-mode code REMOVED from main** (user decision: the MA render
+      device is the way forward). Archived to branch **`archive/speaker-mode`** (at fae6025, pre-removal):
+      SendSpinServer, SpeakerConnection(+Manager), SpeakerDiscoveryService, SpeakerManagerDialog,
+      GroupManager, DirectDecodeService, AudioCaptureService2, WasapiCaptureService. Also stripped: the
+      Speakers/Server settings tabs, the ConnectionMode/SpeakerModeEnabled/mute/UseDirectDecode settings,
+      and all plugin-side speaker handlers (TrackChanged/TrackChanging/Volume/Mute notifications are
+      no longer consumed). Audio/Advanced/Music-Assistant settings tabs remain. To revisit the old
+      mode: `git checkout archive/speaker-mode`. NOTE: the old path was never re-verified after the
+      speaker-mode switch landed (it was disabled before that could happen).

@@ -12,9 +12,8 @@ namespace MusicBeePlugin.SendSpin
     /// <summary>A Music Assistant Sendspin <b>server</b> discovered via mDNS.</summary>
     /// <remarks>
     /// The plugin is the Sendspin CLIENT for this role (it dials the server), so it browses the
-    /// server-initiated connection service type <c>_sendspin-server._tcp.local.</c> — the mirror
-    /// image of <see cref="SpeakerDiscoveryService"/> (which browses <c>_sendspin._tcp</c>, the
-    /// speakers that connect to us).
+    /// server-initiated connection service type <c>_sendspin-server._tcp.local.</c> (the mirror
+    /// image of clients browsing <c>_sendspin._tcp</c>, which is what a Sendspin server does).
     /// </remarks>
     public class DiscoveredServer
     {

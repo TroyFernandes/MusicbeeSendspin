@@ -7,72 +7,33 @@ using Newtonsoft.Json.Converters;
 namespace MusicBeePlugin.SendSpin
 {
     /// <summary>
-    /// Connection mode for SendSpin
-    /// </summary>
-    public enum ConnectionMode
-    {
-        /// <summary>
-        /// Speakers connect to MusicBee server (classic mode)
-        /// </summary>
-        ClientInitiated,
-        
-        /// <summary>
-        /// MusicBee discovers and connects to speakers (recommended)
-        /// </summary>
-        ServerInitiated
-    }
-    
-    /// <summary>
-    /// Plugin settings for SendSpin
+    /// Plugin settings for SendSpin. The plugin streams MusicBee's playback to Music Assistant
+    /// over the Sendspin <c>source@v1</c> protocol (MusicBee is a Sendspin client / render
+    /// device). The legacy speaker-mode settings were archived with the speaker mode itself
+    /// (branch archive/speaker-mode); unknown keys in older settings files are ignored.
     /// </summary>
     public class PluginSettings
     {
-        // Connection Mode
-        [JsonConverter(typeof(StringEnumConverter))]
-        public ConnectionMode ConnectionMode { get; set; } = ConnectionMode.ClientInitiated;
-        
-        // Selected speakers (for server-initiated mode)
-        public List<string> SelectedSpeakerIds { get; set; } = new();
-        
-        // Server Settings (for client-initiated mode)
-        public bool EnableServer { get; set; } = true;
-        public string ServerName { get; set; } = "MusicBee SendSpin";
-        public int ServerPort { get; set; } = 8927; // Default SendSpin server port
-        public bool EnableMdns { get; set; } = true;
-        
-        // Audio Settings
+        // Audio Settings (captured from MusicBee and encoded for the source stream)
         public string AudioCodec { get; set; } = "opus"; // opus, flac, or pcm
         public int SampleRate { get; set; } = 48000;
         public int Channels { get; set; } = 2;
         public int BitDepth { get; set; } = 16;
         public int OpusBitrate { get; set; } = 128000; // 128 kbps
-        
-        // DSP Settings
+
+        // DSP Settings (MusicBee's own processing applied to the handed decode stream)
         public bool EnableDsp { get; set; } = true;
-        
+
         [JsonConverter(typeof(StringEnumConverter))]
         public Plugin.ReplayGainMode ReplayGainMode { get; set; } = Plugin.ReplayGainMode.Smart;
-        
-        // Buffer Settings
-        public int BufferSizeMs { get; set; } = 100; // Buffer size for clients
-        
-        // Playback Settings
-        public bool MuteLocalPlayback { get; set; } = true; // Mute local output when streaming to speakers
-        
-        // Audio Capture Mode
-        public bool UseDirectDecode { get; set; } = true; // Use direct file decode instead of Player_OpenStreamHandle
-        
-        // Legacy speaker mode (plugin acts as a Sendspin server that speakers dial into). Off by
-        // default: the Music Assistant render device is the primary path now. Re-enable here (or
-        // in the Speakers tab) to stream directly to Sendspin speakers again.
-        public bool SpeakerModeEnabled { get; set; } = false;
-        
+
         // Source role (render device / Music Assistant) — MusicBee acts as a Sendspin client to MA
         public bool RenderDeviceEnabled { get; set; } = true; // Expose the Music Assistant render device
         public string RenderDeviceName { get; set; } = "Music Assistant (Sendspin)"; // Name shown in MusicBee
         public bool SourceAutoDiscover { get; set; } = true; // Find the MA Sendspin server via mDNS
         public string SourceServerHost { get; set; } = ""; // Manual host (used when discovery is off / fails)
         public int SourceServerPort { get; set; } = 0; // Manual port (0 = use the port reported by discovery)
+
         // Advanced Settings
         public bool LogDebugInfo { get; set; } = false;
 
@@ -90,7 +51,7 @@ namespace MusicBeePlugin.SendSpin
                     {
                         Converters = { new StringEnumConverter() }
                     });
-                    
+
                     return settings ?? new PluginSettings();
                 }
             }
@@ -98,7 +59,7 @@ namespace MusicBeePlugin.SendSpin
             {
                 Plugin.LogError("PluginSettings.Load", ex);
             }
-            
+
             return new PluginSettings();
         }
 
@@ -113,7 +74,7 @@ namespace MusicBeePlugin.SendSpin
                 {
                     Converters = { new StringEnumConverter() }
                 });
-                
+
                 File.WriteAllText(filePath, json);
             }
             catch (Exception ex)
@@ -129,13 +90,6 @@ namespace MusicBeePlugin.SendSpin
         {
             return new PluginSettings
             {
-                ConnectionMode = ConnectionMode,
-                SpeakerModeEnabled = SpeakerModeEnabled,
-                SelectedSpeakerIds = new List<string>(SelectedSpeakerIds),
-                EnableServer = EnableServer,
-                ServerName = ServerName,
-                ServerPort = ServerPort,
-                EnableMdns = EnableMdns,
                 AudioCodec = AudioCodec,
                 SampleRate = SampleRate,
                 Channels = Channels,
@@ -143,9 +97,6 @@ namespace MusicBeePlugin.SendSpin
                 OpusBitrate = OpusBitrate,
                 EnableDsp = EnableDsp,
                 ReplayGainMode = ReplayGainMode,
-                BufferSizeMs = BufferSizeMs,
-                MuteLocalPlayback = MuteLocalPlayback,
-                UseDirectDecode = UseDirectDecode,
                 RenderDeviceEnabled = RenderDeviceEnabled,
                 RenderDeviceName = RenderDeviceName,
                 SourceAutoDiscover = SourceAutoDiscover,
@@ -154,20 +105,5 @@ namespace MusicBeePlugin.SendSpin
                 LogDebugInfo = LogDebugInfo
             };
         }
-    }
-
-    /// <summary>
-    /// Track information for metadata
-    /// </summary>
-    public class TrackInfo
-    {
-        public string? Title { get; set; }
-        public string? Artist { get; set; }
-        public string? Album { get; set; }
-        public string? AlbumArtist { get; set; }
-        public int Duration { get; set; }
-        public string? Genre { get; set; }
-        public string? Year { get; set; }
-        public string? TrackNumber { get; set; }
     }
 }

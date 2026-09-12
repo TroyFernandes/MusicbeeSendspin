@@ -28,18 +28,40 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 - [ ] Forward transport state: pause / resume / stop / track change / volume+mute (decide local vs forward; document).
 
 ## 2. Component B — Sendspin `source@v1` client (new)
+
+> **Not 100% set in stone (might be wrong):** the wire contract below is inferred from the reference
+> SDK (`sendspin-dotnet`) + `spec/`; only the *Noise handshake* is proven against a live MA (net8 probe).
+> The app-level exchange *order* — and especially what `active_roles` MA grants an **unpaired/Sentinel**
+> client — are best-guesses. Treat the step order as a working model, not a fact; correct it from the
+> first live run's actual traffic.
+
 - [x] Add `Noise.NET` (+ `libsodium`) to `MusicBeeSendSpin.csproj` (verify net48 restore).
 - [x] Port `Connection/Noise/` (+ `Framing/`) wrapper into `SendSpin/Noise/` (NoiseWireFraming, NoiseConstants,
       NoiseCipherSuite, NoisePsk, SentinelPskResolver, Base64UrlText, SendspinIdentity, WireFrame, IWireFraming).
       JSON envelopes use Newtonsoft (net48 has no System.Text.Json) — same field order as the spec schemas.
-- [ ] `SendSpin/SourceConnection.cs` — WebSocket to the MA **server** (client role).
-- [ ] Sentinel KKpsk2 handshake (client/responder) per `spec/connection.md`.
-- [ ] `client/hello` — advertise `source@v1` + codecs actually sent.
-- [ ] `client/time` / respond to `server/time` (server-clock sync).
-- [ ] Handle `server/command {source:{command:"start"|"pause"|"stop"}}`.
-- [ ] `client-stream/start` with current track's `player` metadata (from `NowPlaying_*` APIs).
-- [ ] Binary audio chunks: type `0x0C` + 8-byte BE µs timestamp (server clock) + payload; **pace to real-time** (reuse pump pattern).
-- [ ] Reconnect with backoff; on `start` after reconnect, resume cleanly (seek/position).
+- [x] **Noise KKpsk2 handshake proven against live MA** — the ported `NoiseWireFraming` + the probe's drive
+      (`Start()` → send; receive → `ProcessInbound` → send `Replies`; `IsTransportReady` flips) completed the full
+      handshake against 192.168.1.10:8927. Remaining work is *embedding that proven drive* below, not building it.
+- [ ] **Build order (mirrors the net8 probe's Noise drive, NOT `SpeakerConnection` — that's the old plaintext protocol):**
+  - [ ] `SendSpin/SourceConnection.cs` — dial the MA server with `ClientWebSocket`, run the proven handshake drive
+        into a persistent connect + receive loop. Serialize sends with a `SemaphoreSlim` (`ClientWebSocket` is not
+        thread-safe for concurrent writes).
+  - [ ] After transport-ready, **receive `server/hello` → answer with `client/hello`** (we do *not* initiate it):
+        `supported_roles:["source@v1"]`, `source@v1_support:{}`, `trust_level:"none"`, `unpaired_access:{enabled:true}`,
+        `device_info{product_name,manufacturer,software_version}`.
+  - [ ] **Read `server/activate` → log `active_roles`.** GATING CHECK: does MA grant `source@v1` to an unpaired/Sentinel
+        client, or is pairing required? The reference SDK *refuses* source@v1 without `user` trust — if MA doesn't grant
+        it, pairing is a prerequisite for everything downstream. **Resolve before building audio.**
+  - [ ] **Clock sync** (permitted only after `server/activate`): burst `client/time {client_transmitted:T1}` (µs) →
+        `server/time {server_received:T2, server_transmitted:T3}` + local T4; `offset=((T2-T1)+(T3-T4))/2`,
+        `rtt=(T4-T1)-(T3-T2)`, discard `rtt<=0`, keep min-RTT. Start with best-of-burst offset (skip the full Kalman).
+  - [ ] **Stream is server-initiated**: send audio only on `server/command {source:{command:"start"}}`.
+  - [ ] `client_stream/start` advertising the stream (codec/channels/sample_rate/bit_depth) + current track's player
+        metadata (from `NowPlaying_*` APIs), then binary chunks.
+  - [ ] Binary audio chunk: type `0x0C` + 8-byte BE µs timestamp (server clock = local + offset) + payload;
+        **pace to real-time** (reuse the `SpeakerConnection` pump pattern — proven fix for queue overflow).
+  - [ ] Handle `server/command {source:{command:"start"|"pause"|"stop"}}` (pause = stop sending; stop = end stream).
+  - [ ] Reconnect with backoff; on `start` after reconnect, resume cleanly (seek/position).
 - [ ] `SendSpin/SourceDiscoveryService.cs` — mDNS for `_sendspin-server._tcp` (read `ws` TXT record) + manual `host:port` fallback.
 
 ## 3. Audio path

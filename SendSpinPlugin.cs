@@ -648,6 +648,7 @@ namespace MusicBeePlugin
                     LogInfo("ConnectToSelectedSpeakers", $"Connecting to {speaker.Name}");
                     var success = await _connectionManager.ConnectToSpeakerAsync(speaker);
                     LogInfo("ConnectToSelectedSpeakers", $"Connection to {speaker.Name}: {(success ? "success" : "failed")}");
+                }
             });
         }
         

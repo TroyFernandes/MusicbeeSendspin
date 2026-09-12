@@ -542,6 +542,11 @@ namespace MusicBeePlugin
         {
             try
             {
+                // MUST run before anything touches Noise: Noise.Libsodium P/Invokes bare
+                // "libsodium", which Windows cannot resolve from Plugins\Native\ — preload it by
+                // full path (x64/x86 per process bitness) so the later DllImport binds to it.
+                NativeLibs.EnsureLoaded(LogSource);
+
                 var storagePath = _mbApiInterface.Setting_GetPersistentStoragePath();
                 _sourceIdentityPath = Path.Combine(storagePath, "SendSpinSourceIdentity.key");
                 _sourcePairingPath = Path.Combine(storagePath, "SendSpinSourcePairing.json");
@@ -585,7 +590,9 @@ namespace MusicBeePlugin
             }
             catch (Exception ex)
             {
-                LogError("InitializeSourceDevice", ex);
+                // ex.ToString() walks the inner-exception chain (e.g. the native-load failure
+                // inside TypeInitializationException) — the message alone hides the cause.
+                LogError("InitializeSourceDevice", new Exception(ex.ToString(), ex));
             }
         }
 

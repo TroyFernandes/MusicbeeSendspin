@@ -353,7 +353,7 @@ namespace MusicBeePlugin.SendSpin
                 // IsNullOrEmpty guard, and the comparison should read one consistent value.
                 var target = server.Target;
                 var knownAddress = server.Address;
-                if (string.IsNullOrEmpty(target))
+                if (target is not { Length: > 0 })
                     continue;
                 if (!target.TrimEnd('.').ToLowerInvariant().Equals(host, StringComparison.Ordinal))
                     continue;

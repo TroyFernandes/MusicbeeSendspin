@@ -1,4 +1,5 @@
 using System;
+using MusicBeePlugin.SendSpin;
 using MusicBeePlugin.SendSpin.Noise;
 
 // net48 runtime smoke for TODO #8: proves Noise.NET + the native libsodium binary actually
@@ -11,6 +12,10 @@ internal static class Program
 {
     private static int Main()
     {
+        // The standalone exe has the same native-search problem the MusicBee plugin has: Noise
+        // P/Invokes bare "libsodium", so preload it from Native/<arch>/ by full path first.
+        NativeLibs.EnsureLoaded(msg => Console.WriteLine(msg));
+
         int failures = 0;
         foreach (var suite in new[] { NoiseCipherSuite.ChaChaPoly, NoiseCipherSuite.AesGcm })
         {

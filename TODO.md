@@ -161,6 +161,13 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 
 - [x] `dotnet build` succeeds (0 errors).
 - [x] Tests written as I go: tests/pairing-tests (29 checks), tests/source-connection (60 checks — in-process fake Sendspin server incl. the full pairing + streaming flow), noise-interop + live-handshake-probe still green.
+- [x] **2026-09-12: first Windows run hit `Noise.Libsodium` type-initializer failure at plugin startup —
+      root cause found and fixed:** Noise.NET P/Invokes **bare `libsodium`**, which Windows resolves only
+      from MusicBee's exe dir / system dirs / CWD / PATH — never `Plugins\Native\`. Fix = `NativeLibs.EnsureLoaded()`
+      preloads `Native\<x64|x86>\libsodium.dll` by full path before any Noise call (Windows binds the later
+      bare DllImport to the already-loaded module); both architectures now ship in `Native/x64|`+`Native/x86/`
+      (MusicBee sits in `Program Files (x86)` so bitness is unconfirmed); failure logging now walks inner
+      exceptions. Smoke test updated to preload the same way.
 - [ ] On Windows + MusicBee + a running Music Assistant (⚠️ open risk: HQPlayer is `PluginType.DataStream`,
       this plugin is `General` — if the render device does not appear in Preferences → Player → Output,
       try switching `_about.Type` to `DataStream`):

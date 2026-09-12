@@ -10,13 +10,14 @@
     <!-- Only the platform-probe part of the plugin's Noise support (self-contained, no Newtonsoft). -->
     <Compile Include="../../SendSpin/Noise/NoiseSupport.cs" Link="Src/NoiseSupport.cs" />
     <Compile Include="../../SendSpin/Noise/IsExternalInit.cs" Link="Src/IsExternalInit.cs" />
+    <Compile Include="../../SendSpin/NativeLibs.cs" Link="Src/NativeLibs.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Noise.NET" Version="1.0.0" />
     <PackageReference Include="libsodium" Version="1.0.22" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Ship the same bundled win-x64 libsodium the plugin uses, so the exe is self-sufficient on Windows. -->
+    <!-- Ship the same bundled libsodium (x64 + x86) the plugin uses, so the exe is self-sufficient on Windows. -->
     <None Include="../../Native/**/*.*" CopyToOutputDirectory="PreserveNewest" LinkBase="Native/" />
   </ItemGroup>
 </Project>

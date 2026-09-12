@@ -62,6 +62,12 @@ namespace MusicBeePlugin.SendSpin
         // Audio Capture Mode
         public bool UseDirectDecode { get; set; } = true; // Use direct file decode instead of Player_OpenStreamHandle
         
+        // Source role (render device / Music Assistant) — MusicBee acts as a Sendspin client to MA
+        public bool RenderDeviceEnabled { get; set; } = true; // Expose the Music Assistant render device
+        public string RenderDeviceName { get; set; } = "Music Assistant (Sendspin)"; // Name shown in MusicBee
+        public bool SourceAutoDiscover { get; set; } = true; // Find the MA Sendspin server via mDNS
+        public string SourceServerHost { get; set; } = ""; // Manual host (used when discovery is off / fails)
+        public int SourceServerPort { get; set; } = 0; // Manual port (0 = use the port reported by discovery)
         // Advanced Settings
         public bool LogDebugInfo { get; set; } = false;
 
@@ -134,6 +140,11 @@ namespace MusicBeePlugin.SendSpin
                 BufferSizeMs = BufferSizeMs,
                 MuteLocalPlayback = MuteLocalPlayback,
                 UseDirectDecode = UseDirectDecode,
+                RenderDeviceEnabled = RenderDeviceEnabled,
+                RenderDeviceName = RenderDeviceName,
+                SourceAutoDiscover = SourceAutoDiscover,
+                SourceServerHost = SourceServerHost,
+                SourceServerPort = SourceServerPort,
                 LogDebugInfo = LogDebugInfo
             };
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -213,6 +214,16 @@ namespace MusicBeePlugin.SendSpin.Noise
             }
         }
 
+        /// <summary>
+        /// Rebuilds an identity from persisted keys (see <see cref="IdentityFile"/>). Both halves
+        /// are stored because deriving the public half from the private one is a libsodium
+        /// scalarmult this port does not expose.
+        /// </summary>
+        public static SendspinIdentity FromStoredKeys(ReadOnlySpan<byte> privateKey, ReadOnlySpan<byte> publicKey)
+        {
+            return new SendspinIdentity(privateKey.ToArray(), publicKey.ToArray());
+        }
+
         /// <summary>Decodes a base64url peer id back to its 32-byte key.</summary>
         public static byte[] DecodePeerId(string peerId)
         {
@@ -229,6 +240,57 @@ namespace MusicBeePlugin.SendSpin.Noise
             if (psk.Length != NoiseConstants.KeySize)
                 throw new FormatException($"PSK must decode to {NoiseConstants.KeySize} bytes");
             return psk;
+        }
+    }
+
+    /// <summary>
+    /// Persists the client identity as a base64url text file (private||public, 64 bytes). The
+    /// spec requires a stable client_id across reconnections and restarts — a fresh identity per
+    /// run would make every pairing and server-side association useless.
+    /// </summary>
+    internal static class IdentityFile
+    {
+        public static SendspinIdentity LoadOrGenerate(string path, Action<string>? logger = null)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    byte[] stored = Base64UrlText.Decode(File.ReadAllText(path).Trim());
+                    if (stored.Length == NoiseConstants.KeySize * 2)
+                    {
+                        byte[] priv = new byte[NoiseConstants.KeySize];
+                        byte[] pub = new byte[NoiseConstants.KeySize];
+                        Array.Copy(stored, 0, priv, 0, NoiseConstants.KeySize);
+                        Array.Copy(stored, NoiseConstants.KeySize, pub, 0, NoiseConstants.KeySize);
+                        return SendspinIdentity.FromStoredKeys(priv, pub);
+                    }
+                    logger?.Invoke("IdentityFile: " + path + " has wrong length (" + stored.Length + " B), regenerating");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Invoke("IdentityFile: failed to load " + path + ": " + ex.Message + " — regenerating");
+            }
+
+            SendspinIdentity fresh = SendspinIdentity.Generate();
+            try
+            {
+                string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                byte[] both = new byte[NoiseConstants.KeySize * 2];
+                fresh.PrivateKey.CopyTo(both.AsMemory());
+                fresh.PublicKey.CopyTo(both.AsMemory(NoiseConstants.KeySize));
+                File.WriteAllText(path, Base64UrlText.Encode(both));
+            }
+            catch (Exception ex)
+            {
+                // A save failure means a NEW identity on every run — pairing survives only in
+                // memory for this session. Surface it loudly.
+                logger?.Invoke("IdentityFile: FAILED to persist " + path + ": " + ex.Message);
+            }
+            return fresh;
         }
     }
 }

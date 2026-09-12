@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using MusicBeePlugin.SendSpin;
+using MusicBeePlugin.SendSpin.Noise;
 
 namespace MusicBeePlugin
 {
@@ -29,6 +30,14 @@ namespace MusicBeePlugin
         private static SpeakerConnectionManager? _connectionManager;
         // Relative timestamp (µs from stream start) of the last decoded chunk in the current session
         private static long _lastChunkRelTs;
+        
+        // Source-role render device (Music Assistant) components
+        private static SourceDiscoveryService? _sourceDiscovery;
+        private static SendspinIdentity? _sourceIdentity;
+        private static PairingStore? _sourcePairingStore;
+        private static SourceRenderDevice? _sourceRenderDevice;
+        private static string? _sourceIdentityPath;
+        private static string? _sourcePairingPath;
         
         private static string? _settingsPath;
         private static bool _isInitialized;
@@ -189,6 +198,14 @@ namespace MusicBeePlugin
                     _connectionManager?.DisconnectAllAsync().GetAwaiter().GetResult();
                     _connectionManager?.Dispose();
                     _connectionManager = null;
+                    
+                    // Stop the Music Assistant render device
+                    _sourceRenderDevice?.Deactivate();
+                    _sourceRenderDevice?.Dispose();
+                    _sourceRenderDevice = null;
+                    _sourceDiscovery?.Stop();
+                    _sourceDiscovery?.Dispose();
+                    _sourceDiscovery = null;
                     
                     // Stop discovery
                     _discoveryService?.Stop();
@@ -385,6 +402,24 @@ namespace MusicBeePlugin
         {
             if (!_isInitialized) return;
             
+            // Render device (Music Assistant source) forwards play state independently of the
+            // speaker mode: playing resumes capture, pause/stop end the input stream. Volume/mute
+            // are NOT forwarded (the source role has no volume channel; MA applies its own target
+            // volume) — documented decision, see TODO.md section 1.
+            if (_sourceRenderDevice is { IsActive: true })
+            {
+                try
+                {
+                    _sourceRenderDevice.HandlePlayStateChanged(
+                        ToRenderPlayState(_mbApiInterface.Player_GetPlayState()),
+                        _mbApiInterface.NowPlaying_GetFileUrl() ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    LogError("HandlePlayStateChanged(render)", ex);
+                }
+            }
+            
             // Need either server (client-initiated) or connection manager (server-initiated)
             var hasClientInitiated = _server != null && _settings?.ConnectionMode == ConnectionMode.ClientInitiated;
             var hasServerInitiated = _connectionManager != null && _settings?.ConnectionMode == ConnectionMode.ServerInitiated;
@@ -493,6 +528,202 @@ namespace MusicBeePlugin
 
         #endregion
 
+        #region Source render device (Music Assistant)
+
+        /// <summary>
+        /// Creates the Music Assistant render-device wiring: persistent identity + pairing store,
+        /// mDNS server discovery, and the render device that feeds captured audio into the
+        /// source-role connection. Additive to (and independent of) the speaker mode.
+        /// </summary>
+        private void InitializeSourceDevice()
+        {
+            try
+            {
+                var storagePath = _mbApiInterface.Setting_GetPersistentStoragePath();
+                _sourceIdentityPath = Path.Combine(storagePath, "SendSpinSourceIdentity.key");
+                _sourcePairingPath = Path.Combine(storagePath, "SendSpinSourcePairing.json");
+
+                _sourceIdentity = IdentityFile.LoadOrGenerate(_sourceIdentityPath, LogSource);
+                _sourcePairingStore = new PairingStore(_sourcePairingPath, LogSource);
+
+                if (_settings?.SourceAutoDiscover == true)
+                {
+                    _sourceDiscovery = new SourceDiscoveryService(LogSource);
+                    _sourceDiscovery.Start();
+                }
+
+                var streamParams = new SourceStreamParams
+                {
+                    Codec = _settings?.AudioCodec ?? "opus",
+                    SampleRate = _settings?.SampleRate ?? 48000,
+                    Channels = _settings?.Channels ?? 2,
+                    BitDepth = _settings?.BitDepth ?? 16,
+                };
+                _sourceRenderDevice = new SourceRenderDevice(
+                    _settings?.RenderDeviceName ?? "Music Assistant (Sendspin)",
+                    streamParams,
+                    ResolveSourceServerUrl,
+                    OpenStreamHandleForSource,
+                    () => _sourceIdentity!,
+                    () => _sourcePairingStore!,
+                    () => new AudioCaptureService(_settings ?? new PluginSettings()),
+                    LogSource);
+
+                LogInfo("SourceDevice", $"Render device '{_sourceRenderDevice.DeviceName}' ready; client_id={_sourceIdentity.PeerId}");
+                // The operator needs the token to pair: it lives in the settings dialog, but the
+                // log copy helps headless setups.
+                LogInfo("SourceDevice", "Pairing token: " + _sourceRenderDevice.GetPairingToken());
+
+                // Announce the device so MusicBee (re)reads GetRenderingDevices.
+                if (_settings?.RenderDeviceEnabled == true)
+                {
+                    _mbApiInterface.MB_SendNotification(CallbackType.RenderingDevicesChanged);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("InitializeSourceDevice", ex);
+            }
+        }
+
+        private static void LogSource(string message) => LogInfo("Source", message);
+
+        /// <summary>
+        /// Server URL for the source connection: an explicit manual host wins, then mDNS
+        /// discovery, then nothing (the render device keeps retrying while it waits).
+        /// </summary>
+        private static Uri? ResolveSourceServerUrl()
+        {
+            var settings = _settings;
+            if (settings == null)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(settings.SourceServerHost))
+            {
+                return SourceDiscoveryService.ManualServerUrl(
+                    settings.SourceServerHost, settings.SourceServerPort, 0, "/sendspin");
+            }
+
+            if (settings.SourceAutoDiscover)
+            {
+                var found = _sourceDiscovery?.GetFirstReadyServer();
+                if (found != null && !string.IsNullOrEmpty(found.WebSocketUrl))
+                {
+                    try { return new Uri(found.WebSocketUrl); }
+                    catch (UriFormatException ex)
+                    {
+                        LogError("ResolveSourceServerUrl", ex);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static RenderPlayState ToRenderPlayState(PlayState playState) => playState switch
+        {
+            PlayState.Playing => RenderPlayState.Playing,
+            PlayState.Paused => RenderPlayState.Paused,
+            _ => RenderPlayState.Stopped,
+        };
+
+        /// <summary>Opens a decode stream for the render device's resume path (plugin-owned handle).</summary>
+        private static int OpenStreamHandleForSource(string url)
+        {
+            return _mbApiInterface.Player_OpenStreamHandle(
+                url,
+                useMusicBeeSettings: true,
+                enableDsp: _settings?.EnableDsp ?? true,
+                gainType: _settings?.ReplayGainMode ?? ReplayGainMode.Smart);
+        }
+
+        // --- MusicBee render-device reflection surface (mirrors the HQPlayer plugin) ---
+
+        /// <summary>MusicBee asks for the plugin's output devices.</summary>
+        public string[] GetRenderingDevices()
+        {
+            if (_settings?.RenderDeviceEnabled != true || _sourceRenderDevice == null)
+                return Array.Empty<string>();
+            return new[] { _sourceRenderDevice.DeviceName };
+        }
+
+        /// <summary>
+        /// {continuousOutput, sampleRate, channels, bitDepth} — continuous output off, so MusicBee
+        /// calls PlayToDevice per track (the capture restarts on the new decode stream).
+        /// </summary>
+        public int[] GetRenderingSettings()
+        {
+            var settings = _settings;
+            return new[] { 0, settings?.SampleRate ?? 48000, settings?.Channels ?? 2, settings?.BitDepth ?? 16 };
+        }
+
+        /// <summary>
+        /// MusicBee selected (or deselected) this device as the output. On activation the source
+        /// connection comes up; on deactivation everything tears down — MusicBee stops feeding us
+        /// and returns to the local output on its own (no local-mute hack on this path).
+        /// </summary>
+        public bool SetActiveRenderingDevice(string name)
+        {
+            var device = _sourceRenderDevice;
+            if (device == null || _settings?.RenderDeviceEnabled != true)
+            {
+                LogInfo("SetActiveRenderingDevice", $"device not available (name={name ?? "null"})");
+                return string.IsNullOrEmpty(name);
+            }
+
+            try
+            {
+                if (string.IsNullOrEmpty(name))
+                {
+                    device.Deactivate();
+                    LogInfo("SetActiveRenderingDevice", "deactivated (no active device)");
+                    return true;
+                }
+
+                if (string.Equals(name, device.DeviceName, StringComparison.Ordinal))
+                {
+                    bool ok = device.Activate();
+                    LogInfo("SetActiveRenderingDevice", $"activate '{name}': {ok}");
+                    return ok;
+                }
+
+                // A different output device was selected: ours steps aside.
+                device.Deactivate();
+                LogInfo("SetActiveRenderingDevice", $"deactivated (switched to '{name}')");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogError("SetActiveRenderingDevice", ex);
+                return false;
+            }
+        }
+
+        /// <summary>MusicBee starts playback on this device with a decode stream for us to read.</summary>
+        public bool PlayToDevice(string url, int streamHandle)
+        {
+            var device = _sourceRenderDevice;
+            if (device == null || !device.IsActive)
+            {
+                LogInfo("PlayToDevice", $"no active device (url={url}, handle={streamHandle})");
+                return false;
+            }
+
+            return device.PlayToDevice(url, streamHandle);
+        }
+
+        /// <summary>
+        /// Gapless next-track hook: a no-op for the source role — the next track arrives as a
+        /// fresh PlayToDevice call and the input stream continues across it.
+        /// </summary>
+        public bool QueueNext(string url)
+        {
+            LogInfo("QueueNext", $"queue next: {url} (no-op for the source role)");
+            return _sourceRenderDevice is { IsActive: true };
+        }
+
+        #endregion
+
         #region Private Methods
 
         private void InitializeComponents()
@@ -528,6 +759,9 @@ namespace MusicBeePlugin
                         _server.StartAsync().GetAwaiter().GetResult();
                         LogInfo("InitializeComponents", $"SendSpin server started on port {_settings.ServerPort}");
                     }
+                    
+                    // Music Assistant render device (source role) — additive to speaker mode
+                    InitializeSourceDevice();
                     
                     _isInitialized = true;
                 }
@@ -583,6 +817,23 @@ namespace MusicBeePlugin
                     if (_audioCaptureService != null)
                     {
                         _audioCaptureService.ApplySettings(_settings);
+                    }
+                    
+                    // Render device: react to enable/disable and codec/server changes.
+                    if (_sourceRenderDevice != null)
+                    {
+                        var wasActive = _sourceRenderDevice.IsActive;
+                        _sourceRenderDevice.Deactivate(); // pick up new StreamParams + URL
+                        if (_settings?.RenderDeviceEnabled == true && wasActive)
+                        {
+                            _sourceRenderDevice.Activate();
+                        }
+                        else if (wasActive)
+                        {
+                            // The device was disabled in settings: MusicBee re-reads the (now
+                            // empty) device list and falls back to the local output on its own.
+                        }
+                        _mbApiInterface.MB_SendNotification(CallbackType.RenderingDevicesChanged);
                     }
                 }
             }

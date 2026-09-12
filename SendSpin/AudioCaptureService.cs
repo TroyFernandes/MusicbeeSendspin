@@ -9,10 +9,11 @@ namespace MusicBeePlugin.SendSpin
     /// <summary>
     /// Service for capturing audio from MusicBee using BASS audio library
     /// </summary>
-    public class AudioCaptureService : IDisposable
+    public class AudioCaptureService : IDisposable, IRenderAudioCapture
     {
         private PluginSettings _settings;
         private int _streamHandle;
+        private bool _ownsStreamHandle = true;
         private int _mixerHandle;
         private bool _isCapturing;
         private bool _disposed;
@@ -45,9 +46,11 @@ namespace MusicBeePlugin.SendSpin
         }
 
         /// <summary>
-        /// Start capturing audio from the given stream handle
+        /// Start capturing audio from the given stream handle.
+        /// <paramref name="ownsStreamHandle"/> must be FALSE for a handle MusicBee owns (render
+        /// device) — Stop() must not close a stream MusicBee is still using.
         /// </summary>
-        public void Start(int streamHandle)
+        public void Start(int streamHandle, bool ownsStreamHandle = true)
         {
             if (_isCapturing) return;
             
@@ -56,6 +59,7 @@ namespace MusicBeePlugin.SendSpin
                 try
                 {
                     _streamHandle = streamHandle;
+                    _ownsStreamHandle = ownsStreamHandle;
                     
                     // Get stream info
                     if (!Bass.TryGetStreamInformation(streamHandle, out var sampleRate, out var channels, out var codec))
@@ -135,12 +139,13 @@ namespace MusicBeePlugin.SendSpin
                         _mixerHandle = 0;
                     }
                     
-                    // Close source stream
-                    if (_streamHandle != 0)
+                    // Close the source stream ONLY when the plugin opened it. A render device's
+                    // handle belongs to MusicBee (it drives playback through it).
+                    if (_streamHandle != 0 && _ownsStreamHandle)
                     {
                         Bass.CloseStream(_streamHandle);
-                        _streamHandle = 0;
                     }
+                    _streamHandle = 0;
                     
                     _encoder?.Dispose();
                     _encoder = null;
@@ -363,26 +368,6 @@ namespace MusicBeePlugin.SendSpin
         }
     }
 
-    /// <summary>
-    /// Audio data event arguments
-    /// </summary>
-    public class AudioDataEventArgs : EventArgs
-    {
-        public byte[] Data { get; }
-        public long Timestamp { get; }
-        public int SampleRate { get; }
-        public int Channels { get; }
-        public int BitDepth { get; }
-
-        public AudioDataEventArgs(byte[] data, long timestamp, int sampleRate, int channels, int bitDepth)
-        {
-            Data = data;
-            Timestamp = timestamp;
-            SampleRate = sampleRate;
-            Channels = channels;
-            BitDepth = bitDepth;
-        }
-    }
 
     /// <summary>
     /// Interface for audio encoders

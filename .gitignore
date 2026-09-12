@@ -1,0 +1,10 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# User-specific / machine-specific
+*.user
+.vs/
+
+# Logs
+*.log

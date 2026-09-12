@@ -18,6 +18,7 @@ namespace MusicBeePlugin.SendSpin
         public string Name { get; set; } = string.Empty;
         public IPAddress? Address { get; set; }
         public int Port { get; set; }
+        public string? Target { get; set; } // SRV target host, used to match A records
         public string Path { get; set; } = "/sendspin";
         public DateTime LastSeen { get; set; }
         public bool IsConnected { get; set; }
@@ -222,9 +223,13 @@ namespace MusicBeePlugin.SendSpin
             try
             {
                 var serviceName = e.ServiceInstanceName.ToString();
+
+                // Only SendSpin speakers - without this this fires for every
+                // mDNS service on the LAN and sends an ANY query for each.
+                if (!serviceName.Contains("_sendspin._tcp") || serviceName.Contains("_sendspin-server"))
+                    return;
+
                 _logger($"Discovered service: {serviceName}");
-                
-                // Extract the instance name (without the service type suffix)
                 var instanceName = e.ServiceInstanceName.Labels.FirstOrDefault() ?? serviceName;
                 
                 // Request more details (SRV, TXT records)
@@ -241,6 +246,8 @@ namespace MusicBeePlugin.SendSpin
             try
             {
                 var serviceName = e.ServiceInstanceName.ToString();
+                if (!serviceName.Contains("_sendspin._tcp") || serviceName.Contains("_sendspin-server"))
+                    return;
                 var instanceName = e.ServiceInstanceName.Labels.FirstOrDefault() ?? serviceName;
                 
                 if (_speakers.TryRemove(instanceName, out var speaker))
@@ -290,6 +297,11 @@ namespace MusicBeePlugin.SendSpin
                 {
                     var domainName = ptr.DomainName.ToString();
                     _logger($"PTR record: {ptrName} -> {domainName}");
+
+                    // Keepalive: re-announces prove the speaker is still alive
+                    var instanceName = domainName.Split('.')[0];
+                    if (_speakers.TryGetValue(instanceName, out var known))
+                        known.LastSeen = DateTime.UtcNow;
                     
                     // Request SRV and TXT records for this instance
                     _mdns?.SendQuery(ptr.DomainName, DnsClass.IN, DnsType.SRV);
@@ -298,28 +310,26 @@ namespace MusicBeePlugin.SendSpin
                 return;
             }
             
-            // Only process SRV/TXT/A records for speaker service type (_sendspin._tcp)
-            // Exclude server service type (_sendspin-server._tcp) to avoid discovering ourselves
+            // A records are named by host (e.g. "echo-dot.local."), not by
+            // service type, so route them before the service-name guard.
+            if (record is ARecord a)
+            {
+                ProcessAddressRecord(a.Name.ToString(), a.Address);
+                return;
+            }
+
+            // SRV/TXT: only for the speaker service type (_sendspin._tcp),
+            // excluding the server type so we don't discover ourselves
             if (!name.Contains("_sendspin._tcp") || name.Contains("_sendspin-server"))
                 return;
 
-            switch (record)
+            if (record is SRVRecord srv)
             {
-                case SRVRecord srv:
-                    ProcessSrvRecord(srv);
-                    break;
-                    
-                case TXTRecord txt:
-                    ProcessTxtRecord(txt, name);
-                    break;
-                    
-                case ARecord a:
-                    ProcessAddressRecord(a.Name.ToString(), a.Address);
-                    break;
-                    
-                case AAAARecord aaaa:
-                    // Prefer IPv4 for simplicity, but could use IPv6 if needed
-                    break;
+                ProcessSrvRecord(srv);
+            }
+            else if (record is TXTRecord txt)
+            {
+                ProcessTxtRecord(txt, name);
             }
         }
 
@@ -334,6 +344,7 @@ namespace MusicBeePlugin.SendSpin
             });
             
             speaker.Port = srv.Port;
+            speaker.Target = srv.Target.ToString();
             speaker.LastSeen = DateTime.UtcNow;
             
             _logger($"SRV record: {instanceName} -> {srv.Target}:{srv.Port}");
@@ -384,16 +395,22 @@ namespace MusicBeePlugin.SendSpin
 
         private void ProcessAddressRecord(string name, IPAddress address)
         {
-            // Find speakers that need this address
-            foreach (var kvp in _speakers)
+            // A records are named by host (e.g. "echo-dot.local."), so match
+            // them against the SRV target. Assigning "first speaker without an
+            // address" would grab the IP of whatever mDNS host answered.
+            var host = name.TrimEnd('.').ToLowerInvariant();
+            foreach (var speaker in _speakers.Values)
             {
-                var speaker = kvp.Value;
-                
-                // If we don't have an address yet and this looks like our host
+                if (string.IsNullOrEmpty(speaker.Target))
+                    continue;
+
+                if (speaker.Target.TrimEnd('.').ToLowerInvariant() != host)
+                    continue;
+
+                speaker.LastSeen = DateTime.UtcNow;
                 if (speaker.Address == null)
                 {
                     speaker.Address = address;
-                    speaker.LastSeen = DateTime.UtcNow;
                     _logger($"Address resolved: {speaker.Name} -> {address}");
                     NotifySpeakerUpdate(speaker);
                 }

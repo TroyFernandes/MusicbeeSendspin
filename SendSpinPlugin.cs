@@ -625,13 +625,29 @@ namespace MusicBeePlugin
                 foreach (var speakerId in _settings.SelectedSpeakerIds)
                 {
                     var speaker = _discoveryService.GetSpeaker(speakerId);
-                    if (speaker != null && !_connectionManager.Connections.Any(c => c.Speaker.Id == speakerId))
+                    if (speaker == null)
                     {
-                        LogInfo("ConnectToSelectedSpeakers", $"Connecting to {speaker.Name}");
-                        var success = await _connectionManager.ConnectToSpeakerAsync(speaker);
-                        LogInfo("ConnectToSelectedSpeakers", $"Connection to {speaker.Name}: {(success ? "success" : "failed")}");
+                        LogInfo("ConnectToSelectedSpeakers", $"Speaker {speakerId} no longer available");
+                        continue;
                     }
-                }
+
+                    if (_connectionManager.Connections.Any(c => c.Speaker.Id == speakerId))
+                        continue;
+
+                    // SRV and A records can arrive in different messages;
+                    // wait briefly for the address to resolve before giving up.
+                    for (var i = 0; i < 20 && string.IsNullOrEmpty(speaker.WebSocketUrl); i++)
+                        await Task.Delay(500);
+
+                    if (string.IsNullOrEmpty(speaker.WebSocketUrl))
+                    {
+                        LogInfo("ConnectToSelectedSpeakers", $"Cannot connect to {speaker.Name}: address not resolved");
+                        continue;
+                    }
+
+                    LogInfo("ConnectToSelectedSpeakers", $"Connecting to {speaker.Name}");
+                    var success = await _connectionManager.ConnectToSpeakerAsync(speaker);
+                    LogInfo("ConnectToSelectedSpeakers", $"Connection to {speaker.Name}: {(success ? "success" : "failed")}");
             });
         }
         

@@ -94,7 +94,13 @@ namespace MusicBeePlugin.SendSpin.Noise
         public IEnumerable<WireFrame> EncodeText(string json)
         {
             EnsureTransportReady();
-            return EncryptOutbound(Encoding.UTF8.GetBytes(json).AsMemory());
+            // JSON messages travel as a binary transport message whose first plaintext byte is
+            // the JSON message type (0) — the reference SDK prefixes it in EncodeText.
+            byte[] utf8 = Encoding.UTF8.GetBytes(json);
+            byte[] plaintext = new byte[1 + utf8.Length];
+            plaintext[0] = NoiseConstants.MessageTypeJsonBody;
+            utf8.CopyTo(plaintext, 1);
+            return EncryptOutbound(plaintext.AsMemory());
         }
 
         public IEnumerable<WireFrame> EncodeBinary(ReadOnlyMemory<byte> data)

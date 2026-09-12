@@ -24,6 +24,11 @@ Audio capture **already exists** in this plugin (`AudioCaptureService` / `Direct
   - `spec/roles/source/v1.md` — the source role: connection, `client/hello` (advertise `source@v1`), `client/time`, waiting for `server/command {source:{command:"start"}}`, `client-stream/start {player:{...}}`, and the **binary audio chunk** format (type byte `0x0C`, then an 8-byte big-endian server-clock timestamp in µs, then the audio payload). Also pause/stop → `client-stream/end`.
   - `spec/connection.md` — the connection-level **Noise `KKpsk2` handshake** and the **Sentinel PSK** flow for unpaired clients (the client always uses the sentinel; the server issues a random nonce; the per-connection PSK is derived from `sentinel:nonce` per the spec — the client does **not** persist a long-term PSK).
   - `spec/messaging.md` — message framing / chunk types / envelope.
+
+- **Sendspin .NET SDK** (cloned at `/home/nixos/sendspin-dotnet`, from https://github.com/Sendspin/sendspin-dotnet) — the authoritative **crypto + handshake** reference:
+  - `src/Sendspin.SDK/Connection/Noise/` — Noise `KKpsk2` handshake, Sentinel PSK flow, `NoiseWireFraming`, `NoiseConstants`, `NoiseCipherSuite`, `NoisePsk`, `SendspinIdentity`, `Base64UrlText`, and the hand-rolled `Pairing/X25519.cs`.
+  - Dependencies: NuGet `Noise.NET` 1.0.0 (Noise protocol), `libsodium` 1.0.22, `Concentus` 2.2.2 (Opus). Reuse these + the wrapper source — **do not hand-roll crypto.**
+  - ⚠️ The SDK targets `net8.0;net10.0` — **not** a direct project-reference for the net48 plugin. Plan: add the NuGet primitives (`Noise.NET`, `libsodium`) to the net48 plugin (verify netstandard2.0 support) and port the thin Sendspin KKpsk2/sentinel wrapper from this repo's `Connection/Noise/` files into `SendSpin/`.
 - **HQPlayer plugin** (`/home/nixos/MusicBee-HQPlayer`) — the model for the **render-device** half. Key files:
   - `MusicBeeHQP.vb` — the MusicBee render-device entry points: `GetRenderingDevices() As String()`, `SetActiveRenderingDevice(name As String) As Boolean`, `PlayToDevice(url As String, streamHandle As Integer) As Boolean`, and how transport-state changes are forwarded to the active device.
   - `ControlPointManager.vb` — how the render-device list is maintained and `mbApiInterface.MB_SendNotification(CallbackType.RenderingDevicesChanged)` is raised.

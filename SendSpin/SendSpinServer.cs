@@ -437,6 +437,11 @@ namespace MusicBeePlugin.SendSpin
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    // Stop() disposed the listener while GetContextAsync was pending
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Plugin.LogError("ListenForConnections", ex);

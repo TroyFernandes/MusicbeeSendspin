@@ -104,8 +104,15 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
         aiosendspin `SourceV1Role`).
   - [x] Reconnect with backoff (1s..30s); streaming state is per-connection (reset on reconnect; the server
         re-sends `start` if it still wants the stream). Credential-mismatch reconnect covered by test.
-- [ ] `SendSpin/SourceDiscoveryService.cs` — mDNS for `_sendspin-server._tcp` (read `ws` TXT record) + manual `host:port` fallback.
-        (Manual host:port already plumbed via SourceServerHost/SourceServerPort settings; mDNS lookup pending.)
+- [x] `SendSpin/SourceDiscoveryService.cs` (commit c6c8e75) — mDNS for `_sendspin-server._tcp.local.`
+      (SRV/TXT/A resolution; TXT `path` = WebSocket endpoint — **the task file's "ws" TXT key guess was
+      wrong**: aiosendspin advertises `{name, path}`, `path` fixed to `/sendspin` — plus `name` = friendly
+      name; stale servers dropped after 2 min) + `ManualServerUrl(host, port, discoveredPort, path)` fallback
+      (manual host:port wins; port 0 uses the discovered/default 8927). Settings `SourceAutoDiscover` /
+      `SourceServerHost` / `SourceServerPort` already exist (commit dbd59c7).
+- [~] **Component B REMAINING: wire-up only** — the render-device / audio-path / plugin lifecycle pieces
+      (sections 1, 3, 5) that START/STOP a `SourceConnection` and feed it encoded audio. The connection,
+      pairing, clock sync and streaming protocol themselves are done and tested.
 
 ## 3. Audio path
 

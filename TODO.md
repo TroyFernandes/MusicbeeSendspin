@@ -143,9 +143,9 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
 - [x] Audio codec for the source stream reuses the existing `AudioCodec`/`SampleRate`/`Channels`/`BitDepth`
       settings (default opus/48k/2ch/16); `StreamParams` flows into `client_stream/start`.
 - [x] Existing speaker-mode settings untouched (additive only).
-- [ ] **Settings dialog UI for the source section**: enable toggle, device name, host/port, auto-discover
-      checkbox — and the **pairing token display** (currently only logged at startup; the operator needs
-      a copyable token in the dialog to pair with MA).
+- [x] **Settings dialog UI** — new "Music Assistant" tab: enable toggle, device name, auto-discover
+      checkbox, manual host/port, and the **pairing token** (readonly textbox + copy button; the token
+      is also logged at startup for headless setups).
 
 ## 5. Wire-up
 

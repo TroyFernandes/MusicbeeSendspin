@@ -20,6 +20,7 @@ namespace MusicBeePlugin.SendSpin
         private TabPage _serverTab = null!;
         private TabPage _audioTab = null!;
         private TabPage _advancedTab = null!;
+        private TabPage _assistantTab = null!;
         
         // Speaker selection
         private CheckedListBox _speakerListBox = null!;
@@ -53,6 +54,15 @@ namespace MusicBeePlugin.SendSpin
         private NumericUpDown _bufferSizeNumeric = null!;
         private CheckBox _logDebugCheckbox = null!;
         
+        // Music Assistant (source render device) tab
+        private CheckBox _assistantEnabledCheckbox = null!;
+        private TextBox _assistantNameTextbox = null!;
+        private CheckBox _assistantAutoDiscoverCheckbox = null!;
+        private TextBox _assistantHostTextbox = null!;
+        private NumericUpDown _assistantPortNumeric = null!;
+        private TextBox _assistantTokenTextbox = null!;
+        private string? _pairingToken;
+        
         // Buttons
         private Button _okButton = null!;
         private Button _cancelButton = null!;
@@ -64,10 +74,11 @@ namespace MusicBeePlugin.SendSpin
         /// </summary>
         public List<string> SelectedSpeakerIds { get; private set; } = new();
 
-        public SettingsDialog(PluginSettings settings, SpeakerDiscoveryService? discoveryService = null)
+        public SettingsDialog(PluginSettings settings, SpeakerDiscoveryService? discoveryService = null, string? pairingToken = null)
         {
             _settings = settings.Clone();
             _discoveryService = discoveryService;
+            _pairingToken = pairingToken;
             InitializeComponents();
             LoadSettings();
             
@@ -109,11 +120,13 @@ namespace MusicBeePlugin.SendSpin
             CreateServerTab();
             CreateAudioTab();
             CreateAdvancedTab();
+            CreateAssistantTab();
             
             _tabControl.TabPages.Add(_speakersTab);
             _tabControl.TabPages.Add(_serverTab);
             _tabControl.TabPages.Add(_audioTab);
             _tabControl.TabPages.Add(_advancedTab);
+            _tabControl.TabPages.Add(_assistantTab);
             
             // Buttons
             var buttonPanel = new FlowLayoutPanel
@@ -551,6 +564,120 @@ namespace MusicBeePlugin.SendSpin
             _audioTab.Controls.Add(layout);
         }
 
+        private void CreateAssistantTab()
+        {
+            _assistantTab = new TabPage("Music Assistant");
+            
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                AutoSize = true,
+                Padding = new Padding(10)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
+            
+            int row = 0;
+            
+            _assistantEnabledCheckbox = new CheckBox
+            {
+                Text = "Enable the Music Assistant render device",
+                AutoSize = true,
+                Dock = DockStyle.Fill
+            };
+            layout.Controls.Add(_assistantEnabledCheckbox, 0, row);
+            layout.SetColumnSpan(_assistantEnabledCheckbox, 2);
+            row++;
+            
+            var enabledInfo = new Label
+            {
+                Text = "Adds \u201CMusic Assistant (Sendspin)\u201D to Preferences \u2192 Player \u2192 Output. Selecting it routes playback to Music Assistant (local output is silent) \u2014 no local-mute hack.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Dock = DockStyle.Fill
+            };
+            layout.Controls.Add(enabledInfo, 0, row);
+            layout.SetColumnSpan(enabledInfo, 2);
+            row++;
+            
+            layout.Controls.Add(new Label { Text = "Device name:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
+            _assistantNameTextbox = new TextBox { Dock = DockStyle.Fill };
+            layout.Controls.Add(_assistantNameTextbox, 1, row);
+            row++;
+            
+            _assistantAutoDiscoverCheckbox = new CheckBox
+            {
+                Text = "Find the Music Assistant server automatically (mDNS)",
+                AutoSize = true,
+                Dock = DockStyle.Fill
+            };
+            layout.Controls.Add(_assistantAutoDiscoverCheckbox, 0, row);
+            layout.SetColumnSpan(_assistantAutoDiscoverCheckbox, 2);
+            row++;
+            
+            layout.Controls.Add(new Label { Text = "Server host (manual, optional):", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
+            _assistantHostTextbox = new TextBox { Dock = DockStyle.Fill };
+            layout.Controls.Add(_assistantHostTextbox, 1, row);
+            row++;
+            
+            layout.Controls.Add(new Label { Text = "Server port (0 = default 8927):", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
+            _assistantPortNumeric = new NumericUpDown { Minimum = 0, Maximum = 65535, Dock = DockStyle.Fill };
+            layout.Controls.Add(_assistantPortNumeric, 1, row);
+            row++;
+            
+            // Pairing: the token the operator pastes into Music Assistant (pairing_psk method).
+            var pairingLabel = new Label
+            {
+                Text = "Pairing \u2014 paste this token into Music Assistant (it pairs this MusicBee as a source client):",
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                ForeColor = SystemColors.ControlText
+            };
+            layout.Controls.Add(pairingLabel, 0, row);
+            layout.SetColumnSpan(pairingLabel, 2);
+            row++;
+            
+            _assistantTokenTextbox = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                Font = new Font(FontFamily.GenericMonospace, 8.5f),
+                ShortcutsEnabled = true
+            };
+            layout.Controls.Add(_assistantTokenTextbox, 0, row);
+            layout.SetColumnSpan(_assistantTokenTextbox, 2);
+            row++;
+            
+            var copyButton = new Button
+            {
+                Text = "Copy pairing token",
+                AutoSize = true
+            };
+            copyButton.Click += (sender, args) =>
+            {
+                if (!string.IsNullOrEmpty(_assistantTokenTextbox.Text))
+                {
+                    Clipboard.SetText(_assistantTokenTextbox.Text);
+                    copyButton.Text = "Copied!";
+                }
+            };
+            layout.Controls.Add(copyButton, 0, row);
+            row++;
+            
+            var pairingInfo = new Label
+            {
+                Text = "Pairing is required once: Music Assistant only accepts audio sources from paired clients. Rotating the token (e.g. after it leaked) requires deleting SendSpinSourcePairing.json and re-pairing.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Dock = DockStyle.Fill
+            };
+            layout.Controls.Add(pairingInfo, 0, row);
+            layout.SetColumnSpan(pairingInfo, 2);
+            
+            _assistantTab.Controls.Add(layout);
+        }
+
         private void CreateAdvancedTab()
         {
             _advancedTab = new TabPage("Advanced");
@@ -657,6 +784,14 @@ namespace MusicBeePlugin.SendSpin
             _enableDspCheckbox.Checked = _settings.EnableDsp;
             _replayGainCombobox.SelectedIndex = (int)_settings.ReplayGainMode;
             
+            // Music Assistant (source render device)
+            _assistantEnabledCheckbox.Checked = _settings.RenderDeviceEnabled;
+            _assistantNameTextbox.Text = _settings.RenderDeviceName;
+            _assistantAutoDiscoverCheckbox.Checked = _settings.SourceAutoDiscover;
+            _assistantHostTextbox.Text = _settings.SourceServerHost;
+            _assistantPortNumeric.Value = _settings.SourceServerPort;
+            _assistantTokenTextbox.Text = _pairingToken ?? "(unavailable)";
+            
             // Advanced
             _bufferSizeNumeric.Value = _settings.BufferSizeMs;
             _logDebugCheckbox.Checked = _settings.LogDebugInfo;
@@ -709,6 +844,15 @@ namespace MusicBeePlugin.SendSpin
             _settings.Channels = _channelsCombobox.SelectedIndex == 1 ? 1 : 2;
             _settings.BitDepth = _bitDepthCombobox.SelectedIndex == 1 ? 24 : 16;
             _settings.OpusBitrate = (int)_opusBitrateNumeric.Value * 1000;
+            
+            // Music Assistant (source render device)
+            _settings.RenderDeviceEnabled = _assistantEnabledCheckbox.Checked;
+            _settings.RenderDeviceName = string.IsNullOrWhiteSpace(_assistantNameTextbox.Text)
+                ? "Music Assistant (Sendspin)"
+                : _assistantNameTextbox.Text.Trim();
+            _settings.SourceAutoDiscover = _assistantAutoDiscoverCheckbox.Checked;
+            _settings.SourceServerHost = _assistantHostTextbox.Text.Trim();
+            _settings.SourceServerPort = (int)_assistantPortNumeric.Value;
             
             _settings.EnableDsp = _enableDspCheckbox.Checked;
             _settings.ReplayGainMode = (Plugin.ReplayGainMode)_replayGainCombobox.SelectedIndex;

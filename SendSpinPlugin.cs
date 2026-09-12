@@ -100,7 +100,10 @@ namespace MusicBeePlugin
                 // Ensure discovery service is running for the settings dialog
                 EnsureDiscoveryServiceRunning();
                 
-                using (var dialog = new SettingsDialog(_settings ?? new PluginSettings(), _discoveryService))
+                using (var dialog = new SettingsDialog(
+                    _settings ?? new PluginSettings(),
+                    _discoveryService,
+                    pairingToken: _sourceRenderDevice?.GetPairingToken()))
                 {
                     var result = dialog.ShowDialog(Form.FromHandle(_mbApiInterface.MB_GetWindowHandle()));
                     if (result == DialogResult.OK)

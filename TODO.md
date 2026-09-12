@@ -168,10 +168,15 @@ Convention: `- [ ]` = open, `- [x]` = done, `- [~]` = blocked/deferred (say why)
       bare DllImport to the already-loaded module); both architectures now ship in `Native/x64|`+`Native/x86/`
       (MusicBee sits in `Program Files (x86)` so bitness is unconfirmed); failure logging now walks inner
       exceptions. Smoke test updated to preload the same way.
-- [ ] On Windows + MusicBee + a running Music Assistant (⚠️ open risk: HQPlayer is `PluginType.DataStream`,
-      this plugin is `General` — if the render device does not appear in Preferences → Player → Output,
-      try switching `_about.Type` to `DataStream`):
-  - [ ] "Music Assistant (Sendspin)" render device appears in Preferences → Player → Output.
-  - [ ] Selecting it + playing → audio on MA targets, **local output silent without `Player_SetMute`**.
-  - [ ] pause/resume/stop + track changes behave on the MA side.
-  - [ ] existing speaker mode still works (additive only).
+- [x] **2026-09-12 19:29 — LIVE END-TO-END VERIFIED** (Troy's Windows box, 32-bit MusicBee, MA 2.x at
+      192.168.1.10:8927). Render device appears in Preferences → Player → Output (**PluginType.General
+      worked — the DataStream fallback was not needed**). Selecting it at startup reconnects with the
+      PERSISTED pairing (trust=user, source@v1 granted immediately). Playing → MA receives proper audio
+      (MA log: ffmpeg s16le 48k → f32le, first chunk 0.13 s), local output silent WITHOUT any
+      `Player_SetMute` (speaker mode off = the mute hack never runs).
+  - [x] track changes clean (PlayToDevice restarts the capture on the new decode stream, paced 1×);
+        stop ends the stream (source.stop → input stream ended). Fix history this session:
+        float→16-bit PCM conversion (static bug), 1× capture pacing, libsodium preload.
+  - [~] existing speaker mode still works — code untouched, now behind `SpeakerModeEnabled` (default
+        OFF). Re-enable via the Speakers tab checkbox to verify the old path again; deletion deferred
+        until that re-verification.

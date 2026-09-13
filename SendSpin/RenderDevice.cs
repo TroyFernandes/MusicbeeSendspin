@@ -202,7 +202,17 @@ namespace MusicBeePlugin.SendSpin
 
             _resolveLoopCts?.Cancel();
             StopCapture();
-            _connection?.Stop();
+            // Stop AND clear: the resolve loop only starts a connection while _connection is null,
+            // so a stopped-but-still-set connection blocked re-activation (no audio after
+            // switching back to this device in the same MusicBee session).
+            SourceConnection? conn;
+            lock (_lock)
+            {
+                conn = _connection;
+                _connection = null;
+            }
+            conn?.Stop();
+            conn?.Dispose();
             _frozenPositionMs = 0;
             _seekOffsetUs = 0;
             // Dispose the capture: the factory creates a fresh AudioCaptureService with the

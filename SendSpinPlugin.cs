@@ -28,6 +28,9 @@ namespace MusicBeePlugin
         private static SendspinIdentity? _sourceIdentity;
         private static PairingStore? _sourcePairingStore;
         private static SourceRenderDevice? _sourceRenderDevice;
+        // MusicBee restores its remembered output device right after plugin startup. We decline
+        // that auto-restore (see SetActiveRenderingDevice) so MusicBee stays on the default output.
+        private static readonly System.Diagnostics.Stopwatch _startupClock = System.Diagnostics.Stopwatch.StartNew();
         private static string? _sourceIdentityPath;
         private static string? _sourcePairingPath;
         private static SourceConnection? _connectionEventsWiredFor;
@@ -528,6 +531,14 @@ namespace MusicBeePlugin
 
                 if (string.Equals(name, device.DeviceName, StringComparison.Ordinal))
                 {
+                    // MusicBee re-selects its remembered output device milliseconds after plugin
+                    // startup. Decline that auto-restore (MusicBee falls back to its default
+                    // output) — the user's manual selection later in the session activates normally.
+                    if (_startupClock.Elapsed.TotalSeconds < 5)
+                    {
+                        LogInfo("SetActiveRenderingDevice", $"startup auto-restore declined — output stays on the default device (select '{name}' again to use it)");
+                        return false;
+                    }
                     bool ok = device.Activate();
                     LogInfo("SetActiveRenderingDevice", $"activate '{name}': {ok}");
                     return ok;

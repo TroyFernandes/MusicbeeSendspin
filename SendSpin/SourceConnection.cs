@@ -816,6 +816,11 @@ namespace MusicBeePlugin.SendSpin
             IsStreamOpen = true;
             _droppedBacklogChunks = 0;
             while (_audioQueue.TryDequeue(out _)) { }
+            // Re-create the audio pump: EndInputStream disposes it, but the next track's stream
+            // opens WITHOUT a new MA source.start (aiosendspin keeps _start_requested across
+            // client_stream/end) — so OpenInputStream is the only chance to restart it.
+            _audioPumpTimer ??= new Timer(_ => PumpAudioOnce(), null,
+                TimeSpan.Zero, TimeSpan.FromMilliseconds(20));
             SetState(SourceConnectionState.Streaming);
             _log($"[Source] input stream open: {StreamParams.Codec} {StreamParams.SampleRate} Hz {StreamParams.Channels} ch");
         }

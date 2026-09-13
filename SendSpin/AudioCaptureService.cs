@@ -16,6 +16,7 @@ namespace MusicBeePlugin.SendSpin
         private int _sourceSampleRate = 48000;
         private int _sourceChannels = 2;
         private long _totalBytesRead;
+        private int _zeroReadStreak;
         private bool _ownsStreamHandle = true;
         private int _mixerHandle;
         private bool _isCapturing;
@@ -85,7 +86,17 @@ namespace MusicBeePlugin.SendSpin
                 if (!_isCapturing || _streamHandle == 0)
                     return;
                 long pos = (long)(seconds * _sourceSampleRate * _sourceChannels * 4); // float bytes
-                Bass.SetStreamPosition(_streamHandle, pos);
+                if (_mixerHandle != 0 && _mixerHandle != _streamHandle)
+                {
+                    // The source is attached to a mixer: use the mixer-aware position setter.
+                    // Raw BASS_ChannelSetPosition on a mixer source confuses the mixer's
+                    // internal buffer (repeated/garbled audio).
+                    Bass.SetMixerChannelPosition(_streamHandle, pos);
+                }
+                else
+                {
+                    Bass.SetStreamPosition(_streamHandle, pos);
+                }
                 _paceClock.Restart();
                 Plugin.LogInfo("AudioCaptureService", $"Seek to {seconds:F1}s (byte pos {pos})");
             }
@@ -117,6 +128,7 @@ namespace MusicBeePlugin.SendSpin
                     _ownsStreamHandle = ownsStreamHandle;
                     _paceClock.Restart();
                     _totalBytesRead = 0;
+                    _zeroReadStreak = 0;
                     
                     // Get stream info
                     if (!Bass.TryGetStreamInformation(streamHandle, out var sampleRate, out var channels, out var codec))
@@ -345,6 +357,7 @@ namespace MusicBeePlugin.SendSpin
                     
                     if (bytesRead > 0)
                     {
+                        _zeroReadStreak = 0;
                         successfulReads++;
 
                         // Convert float [-1, 1] to clamped 16-bit LE PCM for the encoder.
@@ -412,7 +425,21 @@ namespace MusicBeePlugin.SendSpin
                     }
                     else if (bytesRead == 0)
                     {
-                        // No data available, wait a bit
+                        // No data from the mixer. The mixer may not propagate the source decode
+                        // stream's end (AUTOFREE removes it but the mixer keeps running), so
+                        // check the source handle directly after a sustained silence.
+                        _zeroReadStreak++;
+                        if (_zeroReadStreak >= 20) // ~100 ms of no data at 5 ms/read
+                        {
+                            int active = Bass.ChannelIsActive(_streamHandle);
+                            if (active == 4) // BASS_ACTIVE_ENDED: the handed track is fully consumed
+                            {
+                                Plugin.LogInfo("CaptureLoop", "Source decode stream ended (BASS_ACTIVE_ENDED)");
+                                _isCapturing = false;
+                                StreamEnded?.Invoke(this, EventArgs.Empty);
+                                break;
+                            }
+                        }
                         Thread.Sleep(5);
                     }
                     else
@@ -716,6 +743,28 @@ namespace MusicBeePlugin.SendSpin
             BASS_ChannelSetPosition(streamHandle, position, 0);
         }
 
+        /// <summary>
+        /// Mixer-aware seek: repositions a source that's plugged into a mixer, properly handling
+        /// the mixer's internal buffering. Using the raw BASS_ChannelSetPosition on a source
+        /// that's attached to a mixer confuses its buffer (produces repeated/garbled audio).
+        /// </summary>
+        public static bool SetMixerChannelPosition(int sourceHandle, long position)
+        {
+            return BASS_Mixer_ChannelSetPosition(sourceHandle, position, 0);
+        }
+
+        /// <summary>Removes a source from a mixer (call before repositioning it directly).</summary>
+        public static bool MixerChannelRemove(int mixerHandle, int sourceHandle)
+        {
+            return BASS_Mixer_ChannelRemove(mixerHandle, sourceHandle);
+        }
+
+        /// <summary>0=stopped, 1=playing, 2=paused, 3=stalled, 4=ended.</summary>
+        public static int ChannelIsActive(int handle)
+        {
+            return BASS_ChannelIsActive(handle);
+        }
+
         #region P/Invoke
 
         [DllImport("bass.dll", CharSet = CharSet.Auto)]
@@ -741,6 +790,15 @@ namespace MusicBeePlugin.SendSpin
 
         [DllImport("bassmix.dll", CharSet = CharSet.Auto)]
         private static extern bool BASS_Mixer_StreamAddChannel(int handle, int channel, BASSFlag flags);
+
+        [DllImport("bassmix.dll", CharSet = CharSet.Auto)]
+        private static extern bool BASS_Mixer_ChannelSetPosition(int handle, long pos, int mode);
+
+        [DllImport("bassmix.dll", CharSet = CharSet.Auto)]
+        private static extern bool BASS_Mixer_ChannelRemove(int handle, int channel);
+
+        [DllImport("bass.dll", CharSet = CharSet.Auto)]
+        private static extern int BASS_ChannelIsActive(int handle);
 
         #endregion
     }

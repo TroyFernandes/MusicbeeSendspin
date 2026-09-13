@@ -26,13 +26,6 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
 
-  <!-- MusicBee Output Directory - Output directly to MusicBee Plugins folder -->
-  <PropertyGroup>
-    <OutputPath>..\Musicbee\Plugins\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-  </PropertyGroup>
-
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />

@@ -86,17 +86,27 @@ namespace MusicBeePlugin.SendSpin
                 if (!_isCapturing || _streamHandle == 0)
                     return;
                 long pos = (long)(seconds * _sourceSampleRate * _sourceChannels * 4); // float bytes
+
                 if (_mixerHandle != 0 && _mixerHandle != _streamHandle)
                 {
-                    // The source is attached to a mixer: use the mixer-aware position setter.
-                    // Raw BASS_ChannelSetPosition on a mixer source confuses the mixer's
-                    // internal buffer (repeated/garbled audio).
-                    Bass.SetMixerChannelPosition(_streamHandle, pos);
+                    // The source is attached to a mixer: detach → seek → reattach.
+                    // Using BASS_Mixer_ChannelSetPosition alone doesn't flush the mixer's
+                    // internal buffer (stale data loops as "repeated audio"). Detaching and
+                    // re-attaching gives the mixer a clean state.
+                    Bass.MixerChannelRemove(_mixerHandle, _streamHandle);
+                    Bass.SetStreamPosition(_streamHandle, pos);
+                    Bass.MixerAddChannel(_mixerHandle, _streamHandle, _sourceChannels, _settings.Channels);
                 }
                 else
                 {
+                    // Direct read from the decode stream (no mixer): reposition and drain
+                    // any internally buffered data by reading a few bytes past the seek point.
                     Bass.SetStreamPosition(_streamHandle, pos);
+                    var drain = new byte[256];
+                    Bass.ReadStreamDataRaw(_streamHandle, drain, drain.Length); // flush codec state
                 }
+
+                _totalBytesRead = 0; // reset: the position counter tracks the NEW position
                 _paceClock.Restart();
                 Plugin.LogInfo("AudioCaptureService", $"Seek to {seconds:F1}s (byte pos {pos})");
             }
@@ -446,9 +456,9 @@ namespace MusicBeePlugin.SendSpin
                     {
                         // Error - bytesRead is -1
                         var errorCode = Bass.GetLastError();
-                        if (errorCode == 38) // BASS_ERROR_ENDED — decode stream fully consumed: TRACK END
+                        if (errorCode == 38 || errorCode == 45) // BASS_ERROR_ENDED(38) or BASS_ERROR_DECODEEND(45) — decode stream fully consumed: TRACK END
                         {
-                            Plugin.LogInfo("CaptureLoop", "Decode stream ended (track fully consumed)");
+                            Plugin.LogInfo("CaptureLoop", $"Decode stream ended (error {errorCode})");
                             _isCapturing = false;
                             StreamEnded?.Invoke(this, EventArgs.Empty);
                             break;

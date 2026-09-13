@@ -133,8 +133,7 @@ namespace SendSpin.Tests
                 {
                     ["source"] = new JObject { ["command"] = "start" },
                 });
-                await Task.Delay(200);
-
+                await TestAwait.WaitUntil(() => device.Connection!.StreamStartAuthorized, TimeSpan.FromSeconds(5), "start authorization");
                 fakeCapture.Emit(new byte[] { 1, 1, 1 }, 1_000);
                 JObject streamStart = await server.WaitFor("client_stream/start", TimeSpan.FromSeconds(10));
                 Assert.Equal(fakeCapture.Codec, streamStart["payload"]?["source"]?["codec"]?.Value<string>());
@@ -242,9 +241,9 @@ namespace SendSpin.Tests
                 {
                     ["source"] = new JObject { ["command"] = "start" },
                 });
-                await Task.Delay(150);
+                await TestAwait.WaitUntil(() => device.Connection!.StreamStartAuthorized, TimeSpan.FromSeconds(5), "start authorization");
                 fakeCapture.Emit(new byte[] { 1, 2, 3 }, ServerClock.NowUs());
-                await Task.Delay(150);
+                await TestAwait.WaitUntil(() => device.Connection!.IsStreamOpen, TimeSpan.FromSeconds(5), "stream open after first packet");
 
                 await server.SendJsonAsync("server/command", new JObject
                 {

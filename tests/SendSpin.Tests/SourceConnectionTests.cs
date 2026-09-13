@@ -355,9 +355,9 @@ namespace SendSpin.Tests
             {
                 ["source"] = new JObject { ["command"] = "start" },
             });
-            await Task.Delay(150);
+            await TestAwait.WaitUntil(() => conn.StreamStartAuthorized, TimeSpan.FromSeconds(5), "start authorization");
             conn.EnqueueEncodedAudio(new byte[] { 4, 4, 4 }, ServerClock.NowUs());
-            await Task.Delay(150); // pump releases it → stream fed
+            await TestAwait.WaitUntil(() => conn.IsStreamOpen, TimeSpan.FromSeconds(5), "stream fed");
 
             await server.SendJsonAsync("server/command", new JObject
             {

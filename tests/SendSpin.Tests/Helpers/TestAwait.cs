@@ -31,5 +31,19 @@ namespace SendSpin.Tests
             if (first != task)
                 throw new TimeoutException($"event did not fire within {timeout.TotalSeconds}s: {what}");
         }
+
+        /// <summary>Polls a condition until true; throws on timeout. Use instead of fixed
+        /// Task.Delay gates — under load a fixed delay can expire before the wire round-trips.</summary>
+        public static async Task WaitUntil(Func<bool> condition, TimeSpan timeout, string what)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (condition())
+                    return;
+                await Task.Delay(25);
+            }
+            throw new TimeoutException($"condition not met within {timeout.TotalSeconds}s: {what}");
+        }
     }
 }

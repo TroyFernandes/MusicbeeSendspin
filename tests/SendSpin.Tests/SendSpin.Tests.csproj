@@ -21,8 +21,7 @@
     <Compile Include="../../SendSpin/CaptureTimeline.cs" Link="Src/CaptureTimeline.cs" />
     <Compile Include="../../SendSpin/RenderDevice.cs" Link="Src/RenderDevice.cs" />
     <Compile Include="../../SendSpin/PluginSettings.cs" Link="Src/PluginSettings.cs" />
-    <Compile Include="../noise-interop/TestNoiseServer.cs" Link="Src/TestNoiseServer.cs" />
-    <Compile Include="../noise-interop/TestBase64Url.cs" Link="Src/TestBase64Url.cs" />
+    <!-- Helpers/TestNoiseServer.cs + Helpers/TestBase64Url.cs are picked up by default globbing. -->
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

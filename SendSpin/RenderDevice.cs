@@ -75,6 +75,7 @@ namespace MusicBeePlugin.SendSpin
         private long _captureEpochUs;          // ServerClock value when the capture clock was ~0
         private int _lastPlayHandle;           // handle from the latest PlayToDevice (resume use)
         private long _frozenPositionMs;        // playback position while not capturing
+        private long _seekOffsetUs;            // cumulative seek offset (SeekTo resets CapturedAudioUs)
         private bool _active;
         private bool _disposed;
         private CancellationTokenSource? _resolveLoopCts;
@@ -126,7 +127,7 @@ namespace MusicBeePlugin.SendSpin
                 lock (_lock)
                 {
                     if (_capture is { IsCapturing: true })
-                        return _capture.CapturedAudioUs / 1000;
+                        return (_seekOffsetUs + _capture.CapturedAudioUs) / 1000;
                     return _frozenPositionMs;
                 }
             }
@@ -140,8 +141,11 @@ namespace MusicBeePlugin.SendSpin
                 _frozenPositionMs = ms;
                 if (_capture is { IsCapturing: true })
                 {
+                    // SeekTo resets CapturedAudioUs to 0; _seekOffsetUs makes PlayPositionMs
+                    // report the target position (not 0) after the seek.
+                    _seekOffsetUs = ms * 1000;
                     _capture.SeekTo(ms / 1000.0);
-                    _log($"[RenderDevice] seek to {ms} ms");
+                    _log($"[RenderDevice] seek to {ms} ms (offset {_seekOffsetUs} µs)");
                 }
             }
         }
@@ -190,6 +194,7 @@ namespace MusicBeePlugin.SendSpin
             StopCapture();
             _connection?.Stop();
             _frozenPositionMs = 0;
+            _seekOffsetUs = 0;
             _log("[RenderDevice] deactivated");
         }
 
@@ -274,6 +279,7 @@ namespace MusicBeePlugin.SendSpin
             }
 
             _lastPlayHandle = streamHandle;
+            _seekOffsetUs = 0; // new track: position restarts at 0
             StartCapture(streamHandle, ownsHandle: false);
             _log($"[RenderDevice] PlayToDevice: url={url}, handle={streamHandle}");
             return true;
@@ -402,7 +408,7 @@ namespace MusicBeePlugin.SendSpin
             {
                 if (_capture is { IsCapturing: true })
                 {
-                    _frozenPositionMs = _capture.CapturedAudioUs / 1000;
+                    _frozenPositionMs = (_seekOffsetUs + _capture.CapturedAudioUs) / 1000;
                     _capture.Stop();
                 }
             }

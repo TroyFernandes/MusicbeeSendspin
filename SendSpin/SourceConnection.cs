@@ -298,7 +298,6 @@ namespace MusicBeePlugin.SendSpin
             _bestRttUs = long.MaxValue;
             StreamStartAuthorized = false;
             IsStreamOpen = false;
-            _streamWasFed = false;
             _maPausedPlayback = false;
             while (_audioQueue.TryDequeue(out _)) { }
             DisposeTimer(ref _audioPumpTimer);
@@ -750,8 +749,6 @@ namespace MusicBeePlugin.SendSpin
 
         /// <summary>Whether an input stream is currently open (client_stream/start sent, not yet ended).</summary>
         public bool IsStreamOpen { get; private set; }
-        /// <summary>Whether the current/last open input stream actually carried audio (drives the MA-pause mirror).</summary>
-        private bool _streamWasFed;
         /// <summary>Whether we asked the player to pause because MA stopped a fed input.</summary>
         private bool _maPausedPlayback;
 
@@ -817,7 +814,6 @@ namespace MusicBeePlugin.SendSpin
             // Wire type uses underscores (client_stream/start) — see the reference implementations.
             EnqueueJson(new JObject { ["type"] = "client_stream/start", ["payload"] = payload });
             IsStreamOpen = true;
-            _streamWasFed = true;
             _droppedBacklogChunks = 0;
             while (_audioQueue.TryDequeue(out _)) { }
             SetState(SourceConnectionState.Streaming);
@@ -828,8 +824,9 @@ namespace MusicBeePlugin.SendSpin
         {
             EnqueueJson(new JObject { ["type"] = "client_stream/end", ["payload"] = new JObject() });
             IsStreamOpen = false;
-            _streamWasFed = false;
-            StreamStartAuthorized = false;
+            // StreamStartAuthorized stays true: aiosendspin keeps _start_requested after
+            // client_stream/end, so the next track's stream opens without a new MA command.
+            // It is only cleared by MA's explicit source.stop.
             while (_audioQueue.TryDequeue(out _)) { }
             DisposeTimer(ref _audioPumpTimer);
             if (_state == SourceConnectionState.Streaming)

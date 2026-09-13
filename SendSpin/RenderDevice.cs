@@ -309,6 +309,14 @@ namespace MusicBeePlugin.SendSpin
                 _log("[RenderDevice] PlayToDevice: stream handle is 0 — cannot capture");
                 return false;
             }
+            if (_connection is null)
+            {
+                // No connection yet (device just activated, server not discovered): decline so
+                // MusicBee reports the device unavailable instead of playing into a capture
+                // that has nowhere to send.
+                _log($"[RenderDevice] PlayToDevice declined (no connection yet): url={url}, handle={streamHandle}");
+                return false;
+            }
 
             _lastPlayHandle = streamHandle;
             _seekOffsetUs = 0; // new track: position restarts at 0

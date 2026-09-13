@@ -38,7 +38,12 @@ namespace MusicBeePlugin.SendSpin
         // it is read, so an unpaced loop would race through the track (observed: a full track's
         // PCM consumed in ~6× real-time, then the stream runs dry) and playback would end early.
         private readonly System.Diagnostics.Stopwatch _paceClock = System.Diagnostics.Stopwatch.StartNew();
-        
+        // _clock value when the current track's content timeline started (set on Start/SeekTo).
+        // Chunk timestamps are CONTENT-spaced (start + audio delivered before the chunk), never
+        // emission wall-clock: a wall-clock stamp compresses on catch-up bursts after any hiccup,
+        // and MA's source bridge then drops chunks as out-of-order / inserts silence / trims the
+        // resampler ratio — the intermittent mid-track distortion on hi-res files.
+        private long _trackStartClockUs;
         // Audio buffer settings
         private const int BufferSizeMs = 20; // 20ms chunks for low latency
         // Buffers: the stream is read as 32-bit FLOAT (mixer + decode sources are float; BASS
@@ -125,6 +130,9 @@ namespace MusicBeePlugin.SendSpin
 
                 _totalBytesRead = 0; // reset: the position counter tracks the NEW position
                 _paceClock.Restart();
+                // Seek = content jump: restart the timeline at 'now' so the next chunk's
+                // timestamp continues seamlessly (no rewind, no gap).
+                _trackStartClockUs = GetTimestampMicroseconds();
                 Plugin.LogInfo("AudioCaptureService", $"Seek to {seconds:F1}s (byte pos {pos})");
             }
         }
@@ -156,7 +164,8 @@ namespace MusicBeePlugin.SendSpin
                     _paceClock.Restart();
                     _totalBytesRead = 0;
                     _zeroReadStreak = 0;
-                    
+                    // New content timeline: chunk timestamps restart from 'now' on this track.
+                    _trackStartClockUs = GetTimestampMicroseconds();
                     // Get stream info
                     if (!Bass.TryGetStreamInformation(streamHandle, out var sampleRate, out var channels, out var codec))
                     {
@@ -420,8 +429,12 @@ namespace MusicBeePlugin.SendSpin
                         Buffer.BlockCopy(pcmShorts, 0, pcmBuffer, 0, pcmBytes);
                         _totalBytesRead += pcmBytes; // converted 16-bit bytes (drives pacing/stats)
 
-                        // Get timestamp for this audio chunk
-                        var timestamp = GetTimestampMicroseconds();
+                        // Content-continuous timestamp: first sample of this chunk = track start
+                        // + audio delivered before it. Emission wall-clock stamps compress on
+                        // catch-up bursts (MA's source bridge drops those chunks as out-of-order,
+                        // inserts silence for the gaps, or warbles the resampler ratio).
+                        long bytesPerSecond = _outputSampleRate * EncodeChannels * EncodeBitDepth / 8;
+                        var timestamp = _trackStartClockUs + (_totalBytesRead - pcmBytes) * 1_000_000 / bytesPerSecond;
                         
                         // Encode audio data (PCM mode passes through raw 16-bit bytes)
                         byte[] encodedData;
@@ -451,7 +464,6 @@ namespace MusicBeePlugin.SendSpin
                         // but here it ALSO drives MusicBee's render-device playback clock: MusicBee
                         // decodes as fast as we pull, so without pacing the track would race to its
                         // end and the capture would run dry seconds into playback).
-                        long bytesPerSecond = _outputSampleRate * EncodeChannels * EncodeBitDepth / 8;
                         long elapsedUs = _paceClock.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000);
                         long producedUs = _totalBytesRead * 1_000_000 / bytesPerSecond;
                         long aheadUs = producedUs - elapsedUs;

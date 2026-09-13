@@ -15,6 +15,8 @@ namespace MusicBeePlugin.SendSpin
         private int _streamHandle;
         private int _sourceSampleRate = 48000;
         private int _sourceChannels = 2;
+        private int _outputSampleRate = 48000;  // actual rate we produce (native or mixer target)
+        private bool _isNativePcm;              // true when codec=pcm: no mixer, no encoder
         private long _totalBytesRead;
         private int _zeroReadStreak;
         private bool _ownsStreamHandle = true;
@@ -57,6 +59,13 @@ namespace MusicBeePlugin.SendSpin
         public event EventHandler? StreamEnded;
 
         public bool IsCapturing => _isCapturing;
+
+        /// <summary>The decode stream's native sample rate (known after Start).</summary>
+        public int NativeSampleRate => _sourceSampleRate;
+        /// <summary>The decode stream's native channel count.</summary>
+        public int NativeChannels => _sourceChannels;
+        /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
+        public int OutputSampleRate => _outputSampleRate;
 
         /// <summary>
         /// Audio time consumed from the handed stream, in microseconds (16-bit output domain).
@@ -159,25 +168,38 @@ namespace MusicBeePlugin.SendSpin
                     var testError = Bass.GetLastError();
                     Plugin.LogInfo("AudioCaptureService", $"Test read: bytes={testRead}, error={testError}");
 
-                    // Create mixer stream for format conversion if needed
-                    _mixerHandle = CreateMixerStream(streamHandle, _settings.SampleRate, _settings.Channels);
-                    
-                    if (_mixerHandle != 0 && _mixerHandle != streamHandle)
+                    // PCM mode: read the decode stream at its NATIVE rate (no mixer, no
+                    // resampling) — this is the bit-perfect path. Opus/FLAC: mixer resamples
+                    // to the settings rate (Opus requires 48 kHz).
+                    _isNativePcm = _settings.AudioCodec.Equals("pcm", StringComparison.OrdinalIgnoreCase);
+                    if (_isNativePcm)
                     {
-                        Plugin.LogInfo("AudioCaptureService", $"Created mixer stream: handle={_mixerHandle}");
+                        _mixerHandle = 0; // no mixer: read the source directly
+                        _outputSampleRate = sampleRate;
+                        Plugin.LogInfo("AudioCaptureService", $"PCM native: {sampleRate}Hz, {channels}ch (no resampling)");
+                    }
+                    else
+                    {
+                        _mixerHandle = CreateMixerStream(streamHandle, _settings.SampleRate, _settings.Channels);
+                        _outputSampleRate = _settings.SampleRate;
+                        if (_mixerHandle != 0 && _mixerHandle != streamHandle)
+                        {
+                            Plugin.LogInfo("AudioCaptureService", $"Created mixer stream: handle={_mixerHandle}");
+                        }
                     }
                     
                     // Calculate buffer size
                     // Allocate the conversion buffers (16-bit PCM handed to the encoder) plus the
                     // float-side buffers: float bytes are 2× the 16-bit size (4 B vs 2 B per sample).
-                    _bufferSize = CalculateBufferSize(_settings.SampleRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
+                    var captureRate = _isNativePcm ? sampleRate : _settings.SampleRate;
+                    _bufferSize = CalculateBufferSize(captureRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
                     _pcmBuffer = new byte[_bufferSize];
                     _floatBuffer = new byte[_bufferSize * 2];
                     _floatSamples = new float[_bufferSize / 2];
                     _pcmShorts = new short[_bufferSize / 2];
                     
-                    // Initialize encoder based on settings
-                    _encoder = CreateEncoder(_settings.AudioCodec);
+                    // Initialize encoder (skipped for PCM — raw bytes go straight through)
+                    _encoder = _isNativePcm ? null : CreateEncoder(_settings.AudioCodec);
                     
                     // Start capture thread
                     _cancellationTokenSource = new CancellationTokenSource();
@@ -265,6 +287,7 @@ namespace MusicBeePlugin.SendSpin
                                settings.BitDepth != _settings.BitDepth;
             
             _settings = settings;
+            _isNativePcm = settings.AudioCodec.Equals("pcm", StringComparison.OrdinalIgnoreCase);
             
             if ((codecChanged || formatChanged) && _isCapturing)
             {
@@ -273,7 +296,8 @@ namespace MusicBeePlugin.SendSpin
                 _encoder = CreateEncoder(settings.AudioCodec);
                 
                 // Recalculate buffer size (16-bit PCM + float-side conversion buffers)
-                _bufferSize = CalculateBufferSize(_settings.SampleRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
+                var capRate = _isNativePcm ? _sourceSampleRate : _settings.SampleRate;
+                _bufferSize = CalculateBufferSize(capRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
                 _pcmBuffer = new byte[_bufferSize];
                 _floatBuffer = new byte[_bufferSize * 2];
                 _floatSamples = new float[_bufferSize / 2];
@@ -394,7 +418,7 @@ namespace MusicBeePlugin.SendSpin
                         // Get timestamp for this audio chunk
                         var timestamp = GetTimestampMicroseconds();
                         
-                        // Encode audio data
+                        // Encode audio data (PCM mode passes through raw 16-bit bytes)
                         byte[] encodedData;
                         if (_encoder != null)
                         {
@@ -402,7 +426,6 @@ namespace MusicBeePlugin.SendSpin
                         }
                         else
                         {
-                            // Raw PCM
                             encodedData = new byte[pcmBytes];
                             Array.Copy(pcmBuffer, encodedData, pcmBytes);
                         }
@@ -413,7 +436,7 @@ namespace MusicBeePlugin.SendSpin
                             AudioDataAvailable?.Invoke(this, new AudioDataEventArgs(
                                 encodedData,
                                 timestamp,
-                                _settings.SampleRate,
+                                _outputSampleRate,
                                 _settings.Channels,
                                 _settings.BitDepth
                             ));
@@ -423,7 +446,7 @@ namespace MusicBeePlugin.SendSpin
                         // but here it ALSO drives MusicBee's render-device playback clock: MusicBee
                         // decodes as fast as we pull, so without pacing the track would race to its
                         // end and the capture would run dry seconds into playback).
-                        long bytesPerSecond = _settings.SampleRate * _settings.Channels * Math.Max(1, _settings.BitDepth / 8);
+                        long bytesPerSecond = _outputSampleRate * _settings.Channels * 2; // 16-bit output
                         long elapsedUs = _paceClock.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000);
                         long producedUs = _totalBytesRead * 1_000_000 / bytesPerSecond;
                         long aheadUs = producedUs - elapsedUs;

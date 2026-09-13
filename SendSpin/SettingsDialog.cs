@@ -139,7 +139,7 @@ namespace MusicBeePlugin.SendSpin
                 Dock = DockStyle.Fill,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            _codecCombobox.Items.AddRange(new object[] { "Opus (Recommended)", "FLAC (Lossless)", "PCM (Uncompressed)" });
+            _codecCombobox.Items.AddRange(new object[] { "PCM — bit-perfect (Recommended)", "Opus (Compressed)", "FLAC (Lossless)" });
             _codecCombobox.SelectedIndexChanged += CodecCombobox_SelectedIndexChanged;
             layout.Controls.Add(_codecCombobox, 1, row);
             row++;
@@ -379,9 +379,9 @@ namespace MusicBeePlugin.SendSpin
             // Audio
             _codecCombobox.SelectedIndex = _settings.AudioCodec.ToLowerInvariant() switch
             {
-                "opus" => 0,
-                "flac" => 1,
-                "pcm" => 2,
+                "pcm" => 0,
+                "opus" => 1,
+                "flac" => 2,
                 _ => 0
             };
 
@@ -417,10 +417,10 @@ namespace MusicBeePlugin.SendSpin
             // Audio
             _settings.AudioCodec = _codecCombobox.SelectedIndex switch
             {
-                0 => "opus",
-                1 => "flac",
-                2 => "pcm",
-                _ => "opus"
+                0 => "pcm",
+                1 => "opus",
+                2 => "flac",
+                _ => "pcm"
             };
 
             _settings.SampleRate = _sampleRateCombobox.SelectedIndex switch
@@ -453,10 +453,13 @@ namespace MusicBeePlugin.SendSpin
 
         private void CodecCombobox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            // Bit depth/opus bitrate only apply to specific codecs.
-            bool isOpus = _codecCombobox.SelectedIndex == 0;
+            // Opus bitrate only applies to Opus; sample rate only matters for Opus/FLAC
+            // (PCM always uses the file's native rate — no resampling).
+            bool isPcm = _codecCombobox.SelectedIndex == 0;
+            bool isOpus = _codecCombobox.SelectedIndex == 1;
             _opusBitrateLabel.Enabled = isOpus;
             _opusBitrateNumeric.Enabled = isOpus;
+            _sampleRateCombobox.Enabled = !isPcm;
         }
 
         private void OkButton_Click(object? sender, EventArgs e)

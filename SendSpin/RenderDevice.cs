@@ -19,6 +19,12 @@ namespace MusicBeePlugin.SendSpin
         bool IsCapturing { get; }
         /// <summary>Audio time consumed from the stream, µs — this is MusicBee's playback position.</summary>
         long CapturedAudioUs { get; }
+        /// <summary>The decode stream's native sample rate (known after Start).</summary>
+        int NativeSampleRate { get; }
+        /// <summary>The decode stream's native channel count.</summary>
+        int NativeChannels { get; }
+        /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
+        int OutputSampleRate { get; }
         /// <summary>Seeks the handed decode stream (capture timestamps unaffected).</summary>
         void SeekTo(double seconds);
         /// <param name="ownsStreamHandle">
@@ -365,6 +371,15 @@ namespace MusicBeePlugin.SendSpin
                         _capture.Stop(); // new decode stream for the new track
 
                     _capture.Start(streamHandle, ownsHandle);
+
+                    // For PCM native, the decode stream's rate IS the output rate. Update the
+                    // connection's stream params so client_stream/start announces the native
+                    // format (MA accepts any rate and resamples on its end).
+                    if (_connection is not null)
+                    {
+                        _connection.StreamParams.SampleRate = _capture.OutputSampleRate;
+                        _connection.StreamParams.Channels = _capture.NativeChannels;
+                    }
                 }
             }
             catch (Exception ex)

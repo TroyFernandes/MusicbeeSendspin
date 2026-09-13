@@ -84,8 +84,11 @@ Order matters: MA waits ~5 s for audio after starting an input, so start MusicBe
   lists the deliberate divergences, and has the update runbook + re-verification ladder.
 - The legacy speaker mode (MusicBee acting as a Sendspin server / dialing speakers) was
   removed; it lives on the `archive/speaker-mode` branch.
-- Tests: `tests/` — transport interop against the SDK's own test server, pairing/token
-  (spec reference vectors), and a full source-role loop against an in-process fake MA server.
+- Tests: `tests/SendSpin.Tests` — `dotnet test tests/SendSpin.Tests` runs everything in-process
+  (reference Noise server, fake Sendspin server on localhost): transport interop, pairing/token
+  spec reference vectors, the full source-role wire loop, capture-timeline/pacing, settings
+  persistence. No external servers — CI-friendly. Manual tools: `tests/live-handshake-probe`
+  (needs a real MA server, URI passed explicitly) and `tests/noise-net48-smoke` (Windows-only).
 
 ## License
 

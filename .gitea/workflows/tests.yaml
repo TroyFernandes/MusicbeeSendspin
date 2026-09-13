@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+    branches: [main, v2]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Run tests
+        # All tests are in-process (reference Noise server + fake Sendspin server on localhost) —
+        # no external servers required. net48 targets in the solution build with reference
+        # assemblies; the Windows-only smoke tool is not part of the test run.
+        run: dotnet test tests/SendSpin.Tests -v minimal
+      - name: Build plugin (net48)
+        run: dotnet build MusicBeeSendSpin.csproj -v quiet

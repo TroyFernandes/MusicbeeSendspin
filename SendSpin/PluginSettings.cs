@@ -16,9 +16,8 @@ namespace MusicBeePlugin.SendSpin
     {
         // Audio Settings (captured from MusicBee and encoded for the source stream)
         public string AudioCodec { get; set; } = "pcm"; // pcm (bit-perfect, default), opus, or flac
-        public int SampleRate { get; set; } = 48000;     // used for opus/flac only — pcm sends the native rate
-        public int Channels { get; set; } = 2;
-        public int BitDepth { get; set; } = 16;
+        // Sample rate / channels / bit depth are NOT configurable: pcm sends the file's native
+        // format untouched; opus/flac encode at the canonical 48 kHz stereo 16-bit.
         public int OpusBitrate { get; set; } = 128000; // 128 kbps
 
         // DSP Settings (MusicBee's own processing applied to the handed decode stream)
@@ -91,9 +90,6 @@ namespace MusicBeePlugin.SendSpin
             return new PluginSettings
             {
                 AudioCodec = AudioCodec,
-                SampleRate = SampleRate,
-                Channels = Channels,
-                BitDepth = BitDepth,
                 OpusBitrate = OpusBitrate,
                 EnableDsp = EnableDsp,
                 ReplayGainMode = ReplayGainMode,

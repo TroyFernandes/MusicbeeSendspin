@@ -346,11 +346,10 @@ namespace MusicBeePlugin
                 }
 
                 var streamParams = new SourceStreamParams
+                // Rate/channels/bit depth are always re-set from the capture at stream open;
+                // only the codec is seeded here.
                 {
                     Codec = _settings?.AudioCodec ?? "opus",
-                    SampleRate = _settings?.SampleRate ?? 48000,
-                    Channels = _settings?.Channels ?? 2,
-                    BitDepth = _settings?.BitDepth ?? 16,
                 };
                 _sourceRenderDevice = new SourceRenderDevice(
                     _settings?.RenderDeviceName ?? "Music Assistant (Sendspin)",
@@ -501,8 +500,7 @@ namespace MusicBeePlugin
         /// </summary>
         public int[] GetRenderingSettings()
         {
-            var settings = _settings;
-            return new[] { 0, settings?.SampleRate ?? 48000, settings?.Channels ?? 2, settings?.BitDepth ?? 16 };
+            return new[] { 0, 48000, 2, 16 };
         }
 
         /// <summary>

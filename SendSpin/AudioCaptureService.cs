@@ -12,6 +12,10 @@ namespace MusicBeePlugin.SendSpin
     public class AudioCaptureService : IDisposable, IRenderAudioCapture
     {
         private PluginSettings _settings;
+        // Opus/FLAC encode at the canonical 48 kHz stereo 16-bit; pcm passes the native format.
+        private const int EncodeSampleRate = 48000;
+        private const int EncodeChannels = 2;
+        private const int EncodeBitDepth = 16;
         private int _streamHandle;
         private int _sourceSampleRate = 48000;
         private int _sourceChannels = 2;
@@ -67,8 +71,8 @@ namespace MusicBeePlugin.SendSpin
         /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
         /// <summary>The codec this capture emits (settings codec — 'pcm' passes raw 16-bit bytes).</summary>
         public string Codec => _settings.AudioCodec;
-        /// <summary>Bit depth of the emitted stream.</summary>
-        public int BitDepth => _settings.BitDepth;
+        /// <summary>Bit depth of the emitted stream (always 16 — s16le for pcm).</summary>
+        public int BitDepth => EncodeBitDepth;
         public int OutputSampleRate => _outputSampleRate;
 
         /// <summary>
@@ -82,7 +86,7 @@ namespace MusicBeePlugin.SendSpin
             {
                 lock (_syncLock)
                 {
-                    long bytesPerSecond = _settings.SampleRate * _settings.Channels * Math.Max(1, _settings.BitDepth / 8);
+                    long bytesPerSecond = _outputSampleRate * EncodeChannels * EncodeBitDepth / 8;
                     return _totalBytesRead * 1_000_000 / bytesPerSecond;
                 }
             }
@@ -108,7 +112,7 @@ namespace MusicBeePlugin.SendSpin
                     // re-attaching gives the mixer a clean state.
                     Bass.MixerChannelRemove(_mixerHandle, _streamHandle);
                     Bass.SetStreamPosition(_streamHandle, pos);
-                    Bass.MixerAddChannel(_mixerHandle, _streamHandle, _sourceChannels, _settings.Channels);
+                    Bass.MixerAddChannel(_mixerHandle, _streamHandle, _sourceChannels, EncodeChannels);
                 }
                 else
                 {
@@ -184,8 +188,8 @@ namespace MusicBeePlugin.SendSpin
                     }
                     else
                     {
-                        _mixerHandle = CreateMixerStream(streamHandle, _settings.SampleRate, _settings.Channels);
-                        _outputSampleRate = _settings.SampleRate;
+                        _mixerHandle = CreateMixerStream(streamHandle, EncodeSampleRate, EncodeChannels);
+                        _outputSampleRate = EncodeSampleRate;
                         if (_mixerHandle != 0 && _mixerHandle != streamHandle)
                         {
                             Plugin.LogInfo("AudioCaptureService", $"Created mixer stream: handle={_mixerHandle}");
@@ -195,8 +199,8 @@ namespace MusicBeePlugin.SendSpin
                     // Calculate buffer size
                     // Allocate the conversion buffers (16-bit PCM handed to the encoder) plus the
                     // float-side buffers: float bytes are 2× the 16-bit size (4 B vs 2 B per sample).
-                    var captureRate = _isNativePcm ? sampleRate : _settings.SampleRate;
-                    _bufferSize = CalculateBufferSize(captureRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
+                    var captureRate = _isNativePcm ? sampleRate : EncodeSampleRate;
+                    _bufferSize = CalculateBufferSize(captureRate, EncodeChannels, EncodeBitDepth, BufferSizeMs);
                     _pcmBuffer = new byte[_bufferSize];
                     _floatBuffer = new byte[_bufferSize * 2];
                     _floatSamples = new float[_bufferSize / 2];
@@ -217,7 +221,7 @@ namespace MusicBeePlugin.SendSpin
                     _isCapturing = true;
                     _captureThread.Start(_cancellationTokenSource.Token);
                     
-                    Plugin.LogInfo("AudioCaptureService", $"Started capturing: {sampleRate}Hz, {channels}ch -> {_settings.SampleRate}Hz, {_settings.Channels}ch, {_settings.AudioCodec}");
+                    Plugin.LogInfo("AudioCaptureService", $"Started capturing: {sampleRate}Hz, {channels}ch -> {_outputSampleRate}Hz, {EncodeChannels}ch, {_settings.AudioCodec}");
                 }
                 catch (Exception ex)
                 {
@@ -286,22 +290,19 @@ namespace MusicBeePlugin.SendSpin
         public void ApplySettings(PluginSettings settings)
         {
             var codecChanged = settings.AudioCodec != _settings.AudioCodec;
-            var formatChanged = settings.SampleRate != _settings.SampleRate ||
-                               settings.Channels != _settings.Channels ||
-                               settings.BitDepth != _settings.BitDepth;
             
             _settings = settings;
             _isNativePcm = settings.AudioCodec.Equals("pcm", StringComparison.OrdinalIgnoreCase);
             
-            if ((codecChanged || formatChanged) && _isCapturing)
+            if (codecChanged && _isCapturing)
             {
                 // Reinitialize encoder with new settings
                 _encoder?.Dispose();
                 _encoder = CreateEncoder(settings.AudioCodec);
                 
                 // Recalculate buffer size (16-bit PCM + float-side conversion buffers)
-                var capRate = _isNativePcm ? _sourceSampleRate : _settings.SampleRate;
-                _bufferSize = CalculateBufferSize(capRate, _settings.Channels, _settings.BitDepth, BufferSizeMs);
+                var capRate = _isNativePcm ? _sourceSampleRate : EncodeSampleRate;
+                _bufferSize = CalculateBufferSize(capRate, EncodeChannels, EncodeBitDepth, BufferSizeMs);
                 _pcmBuffer = new byte[_bufferSize];
                 _floatBuffer = new byte[_bufferSize * 2];
                 _floatSamples = new float[_bufferSize / 2];
@@ -441,8 +442,8 @@ namespace MusicBeePlugin.SendSpin
                                 encodedData,
                                 timestamp,
                                 _outputSampleRate,
-                                _settings.Channels,
-                                _settings.BitDepth
+                                EncodeChannels,
+                                EncodeBitDepth
                             ));
                         }
 
@@ -450,7 +451,7 @@ namespace MusicBeePlugin.SendSpin
                         // but here it ALSO drives MusicBee's render-device playback clock: MusicBee
                         // decodes as fast as we pull, so without pacing the track would race to its
                         // end and the capture would run dry seconds into playback).
-                        long bytesPerSecond = _outputSampleRate * _settings.Channels * 2; // 16-bit output
+                        long bytesPerSecond = _outputSampleRate * EncodeChannels * EncodeBitDepth / 8;
                         long elapsedUs = _paceClock.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000);
                         long producedUs = _totalBytesRead * 1_000_000 / bytesPerSecond;
                         long aheadUs = producedUs - elapsedUs;
@@ -512,10 +513,10 @@ namespace MusicBeePlugin.SendSpin
             switch (codec.ToLowerInvariant())
             {
                 case "opus":
-                    return new OpusEncoder(_settings.SampleRate, _settings.Channels, _settings.OpusBitrate);
+                    return new OpusEncoder(EncodeSampleRate, EncodeChannels, _settings.OpusBitrate);
                     
                 case "flac":
-                    return new FlacEncoder(_settings.SampleRate, _settings.Channels, _settings.BitDepth);
+                    return new FlacEncoder(EncodeSampleRate, EncodeChannels, EncodeBitDepth);
                     
                 case "pcm":
                 default:

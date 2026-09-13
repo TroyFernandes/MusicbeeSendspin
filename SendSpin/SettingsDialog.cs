@@ -20,8 +20,6 @@ namespace MusicBeePlugin.SendSpin
 
         // Audio settings
         private ComboBox _codecCombobox = null!;
-        private ComboBox _sampleRateCombobox = null!;
-        private ComboBox _bitDepthCombobox = null!;
         private NumericUpDown _opusBitrateNumeric = null!;
         private Label _opusBitrateLabel = null!;
 
@@ -122,7 +120,7 @@ namespace MusicBeePlugin.SendSpin
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 8,
+                RowCount = 6,
                 Padding = new Padding(10)
             };
 
@@ -143,32 +141,8 @@ namespace MusicBeePlugin.SendSpin
             layout.Controls.Add(_codecCombobox, 1, row);
             row++;
 
-            // Sample rate
-            layout.Controls.Add(new Label { Text = "Sample Rate:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            _sampleRateCombobox = new ComboBox
-            {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            _sampleRateCombobox.Items.AddRange(new object[] { "44100 Hz", "48000 Hz", "96000 Hz" });
-            layout.Controls.Add(_sampleRateCombobox, 1, row);
-            row++;
-
-            // Channels
-            layout.Controls.Add(new Label { Text = "Channels:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            layout.Controls.Add(new Label { Text = "Stereo (2)", AutoSize = true, Dock = DockStyle.Fill }, 1, row);
-            row++;
-
-            // Bit depth
-            layout.Controls.Add(new Label { Text = "Bit Depth:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            _bitDepthCombobox = new ComboBox
-            {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            _bitDepthCombobox.Items.AddRange(new object[] { "16-bit", "24-bit" });
-            layout.Controls.Add(_bitDepthCombobox, 1, row);
-            row++;
+            // Channels / sample rate / bit depth are fixed: pcm = the file's native format,
+            // opus/flac = 48 kHz stereo 16-bit. Only the opus bitrate is configurable.
 
             // Opus bitrate
             _opusBitrateLabel = new Label { Text = "Opus Bitrate (kbps):", AutoSize = true, Dock = DockStyle.Fill };
@@ -376,15 +350,6 @@ namespace MusicBeePlugin.SendSpin
                 _ => 0 // pcm
             };
 
-            _sampleRateCombobox.SelectedIndex = _settings.SampleRate switch
-            {
-                44100 => 0,
-                48000 => 1,
-                96000 => 2,
-                _ => 1
-            };
-
-            _bitDepthCombobox.SelectedIndex = _settings.BitDepth == 24 ? 1 : 0;
             _opusBitrateNumeric.Value = _settings.OpusBitrate / 1000;
 
             _enableDspCheckbox.Checked = _settings.EnableDsp;
@@ -411,15 +376,6 @@ namespace MusicBeePlugin.SendSpin
                 _ => "pcm"
             };
 
-            _settings.SampleRate = _sampleRateCombobox.SelectedIndex switch
-            {
-                0 => 44100,
-                1 => 48000,
-                2 => 96000,
-                _ => 48000
-            };
-
-            _settings.BitDepth = _bitDepthCombobox.SelectedIndex == 1 ? 24 : 16;
             _settings.OpusBitrate = (int)_opusBitrateNumeric.Value * 1000;
 
             _settings.EnableDsp = _enableDspCheckbox.Checked;
@@ -440,13 +396,10 @@ namespace MusicBeePlugin.SendSpin
 
         private void CodecCombobox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            // Opus bitrate only applies to Opus; sample rate only matters for Opus/FLAC
-            // (PCM always uses the file's native rate — no resampling).
-            bool isPcm = _codecCombobox.SelectedIndex == 0;
+            // Opus bitrate only applies to Opus (pcm is bit-perfect, no knobs).
             bool isOpus = _codecCombobox.SelectedIndex == 1;
             _opusBitrateLabel.Enabled = isOpus;
             _opusBitrateNumeric.Enabled = isOpus;
-            _sampleRateCombobox.Enabled = !isPcm;
         }
 
         private void OkButton_Click(object? sender, EventArgs e)

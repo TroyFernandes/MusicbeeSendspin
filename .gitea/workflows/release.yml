@@ -30,6 +30,7 @@ jobs:
 
           # Re-trigger guard: latest tag matches the version in the file -> already released
           $latestTag = git describe --tags --abbrev=0 2>$null
+          $LASTEXITCODE = 0 # no tags yet (first release) is expected; don't let it fail the step
           if ($latestTag -and "v$major.$minor.$rev" -eq $latestTag) {
             Write-Host "Version v$major.$minor.$rev already has a tag - skipping release."
             "skip=true" >> $env:GITHUB_OUTPUT

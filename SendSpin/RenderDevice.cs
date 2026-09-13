@@ -201,6 +201,18 @@ namespace MusicBeePlugin.SendSpin
             _connection?.Stop();
             _frozenPositionMs = 0;
             _seekOffsetUs = 0;
+            // Dispose the capture: the factory creates a fresh AudioCaptureService with the
+            // CURRENT settings (codec/rate may have changed since the capture was created).
+            lock (_lock)
+            {
+                if (_capture is not null)
+                {
+                    _capture.AudioDataAvailable -= OnCaptureAudio;
+                    _capture.StreamEnded -= OnCaptureStreamEnded;
+                    _capture.Dispose();
+                    _capture = null;
+                }
+            }
             _log("[RenderDevice] deactivated");
         }
 
@@ -460,15 +472,6 @@ namespace MusicBeePlugin.SendSpin
             _disposed = true;
             Deactivate();
             _resolveLoopCts?.Dispose();
-            lock (_lock)
-            {
-                if (_capture is not null)
-                {
-                    _capture.AudioDataAvailable -= OnCaptureAudio;
-                    _capture.Dispose();
-                    _capture = null;
-                }
-            }
             _connection?.Dispose();
         }
     }

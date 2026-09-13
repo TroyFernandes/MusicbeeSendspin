@@ -21,7 +21,6 @@ namespace MusicBeePlugin.SendSpin
         // Audio settings
         private ComboBox _codecCombobox = null!;
         private ComboBox _sampleRateCombobox = null!;
-        private ComboBox _channelsCombobox = null!;
         private ComboBox _bitDepthCombobox = null!;
         private NumericUpDown _opusBitrateNumeric = null!;
         private Label _opusBitrateLabel = null!;
@@ -139,7 +138,7 @@ namespace MusicBeePlugin.SendSpin
                 Dock = DockStyle.Fill,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            _codecCombobox.Items.AddRange(new object[] { "PCM — bit-perfect (Recommended)", "Opus (Compressed)", "FLAC (Lossless)" });
+            _codecCombobox.Items.AddRange(new object[] { "PCM — bit-perfect (Recommended)", "Opus (Compressed)" });
             _codecCombobox.SelectedIndexChanged += CodecCombobox_SelectedIndexChanged;
             layout.Controls.Add(_codecCombobox, 1, row);
             row++;
@@ -157,13 +156,7 @@ namespace MusicBeePlugin.SendSpin
 
             // Channels
             layout.Controls.Add(new Label { Text = "Channels:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            _channelsCombobox = new ComboBox
-            {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            _channelsCombobox.Items.AddRange(new object[] { "Stereo (2)", "Mono (1)" });
-            layout.Controls.Add(_channelsCombobox, 1, row);
+            layout.Controls.Add(new Label { Text = "Stereo (2)", AutoSize = true, Dock = DockStyle.Fill }, 1, row);
             row++;
 
             // Bit depth
@@ -379,10 +372,8 @@ namespace MusicBeePlugin.SendSpin
             // Audio
             _codecCombobox.SelectedIndex = _settings.AudioCodec.ToLowerInvariant() switch
             {
-                "pcm" => 0,
                 "opus" => 1,
-                "flac" => 2,
-                _ => 0
+                _ => 0 // pcm
             };
 
             _sampleRateCombobox.SelectedIndex = _settings.SampleRate switch
@@ -393,7 +384,6 @@ namespace MusicBeePlugin.SendSpin
                 _ => 1
             };
 
-            _channelsCombobox.SelectedIndex = _settings.Channels == 1 ? 1 : 0;
             _bitDepthCombobox.SelectedIndex = _settings.BitDepth == 24 ? 1 : 0;
             _opusBitrateNumeric.Value = _settings.OpusBitrate / 1000;
 
@@ -417,9 +407,7 @@ namespace MusicBeePlugin.SendSpin
             // Audio
             _settings.AudioCodec = _codecCombobox.SelectedIndex switch
             {
-                0 => "pcm",
                 1 => "opus",
-                2 => "flac",
                 _ => "pcm"
             };
 
@@ -431,7 +419,6 @@ namespace MusicBeePlugin.SendSpin
                 _ => 48000
             };
 
-            _settings.Channels = _channelsCombobox.SelectedIndex == 1 ? 1 : 2;
             _settings.BitDepth = _bitDepthCombobox.SelectedIndex == 1 ? 24 : 16;
             _settings.OpusBitrate = (int)_opusBitrateNumeric.Value * 1000;
 

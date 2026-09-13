@@ -48,12 +48,16 @@ jobs:
       - name: Write new version into SendSpinPlugin.cs
         if: steps.version.outputs.skip != 'true'
         shell: pwsh
+        env:
+          NEW_MAJOR: ${{ steps.version.outputs.major }}
+          NEW_MINOR: ${{ steps.version.outputs.minor }}
+          NEW_REV: ${{ steps.version.outputs.rev }}
         run: |
           $cs = "SendSpinPlugin.cs"
           $content = Get-Content $cs -Raw
-          $content = $content -replace '(?m)^(\s*_about\.VersionMajor = )\d+(;)', "`$1${{ steps.version.outputs.major }}`$2"
-          $content = $content -replace '(?m)^(\s*_about\.VersionMinor = )\d+(;)', "`$1${{ steps.version.outputs.minor }}`$2"
-          $content = $content -replace '(?m)^(\s*_about\.Revision = )\d+(;)', "`$1${{ steps.version.outputs.rev }}`$2"
+          $content = $content -replace '(?m)^(\s*_about\.VersionMajor = )\d+(;)', "`${1}$env:NEW_MAJOR`${2}"
+          $content = $content -replace '(?m)^(\s*_about\.VersionMinor = )\d+(;)', "`${1}$env:NEW_MINOR`${2}"
+          $content = $content -replace '(?m)^(\s*_about\.Revision = )\d+(;)', "`${1}$env:NEW_REV`${2}"
           Set-Content -Path $cs -Value $content -NoNewline
           git diff $cs
 

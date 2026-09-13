@@ -612,7 +612,8 @@ namespace MusicBeePlugin.SendSpin
             BASS_STREAM_DECODE = 0x200000,
             BASS_MIXER_DOWNMIX = 0x400000,
             BASS_MIXER_NORAMPIN = 0x800000,
-            BASS_MIXER_MATRIX = 0x10000,
+            BASS_MIXER_MATRIX = 0x10000, // BASS_Mixer_StreamAddChannel
+            BASS_MIXER_END = 0x10000,    // BASS_Mixer_StreamCreate: end when all sources end
             BASS_STREAM_AUTOFREE = 0x40000
         }
 
@@ -659,8 +660,11 @@ namespace MusicBeePlugin.SendSpin
 
         public static int CreateMixerStream(int sampleRate, int channels)
         {
+            // BASS_MIXER_END: the mixer ends when its last source is auto-freed (track end).
+            // Without this, reading the mixer returns 0 forever after the decode stream ends
+            // and the capture loop never detects the track boundary.
             return BASS_Mixer_StreamCreate(sampleRate, channels, 
-                BASSFlag.BASS_STREAM_DECODE | BASSFlag.BASS_SAMPLE_FLOAT);
+                BASSFlag.BASS_STREAM_DECODE | BASSFlag.BASS_SAMPLE_FLOAT | BASSFlag.BASS_MIXER_END);
         }
 
         public static bool MixerAddChannel(int mixerHandle, int sourceHandle, int sourceChannels, int targetChannels)

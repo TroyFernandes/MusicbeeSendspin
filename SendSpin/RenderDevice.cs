@@ -23,6 +23,10 @@ namespace MusicBeePlugin.SendSpin
         int NativeSampleRate { get; }
         /// <summary>The decode stream's native channel count.</summary>
         int NativeChannels { get; }
+        /// <summary>The codec the capture actually emits ('pcm', 'opus', or 'flac').</summary>
+        string Codec { get; }
+        /// <summary>Bit depth of the emitted stream.</summary>
+        int BitDepth { get; }
         /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
         int OutputSampleRate { get; }
         /// <summary>Seeks the handed decode stream (capture timestamps unaffected).</summary>
@@ -384,13 +388,15 @@ namespace MusicBeePlugin.SendSpin
 
                     _capture.Start(streamHandle, ownsHandle);
 
-                    // For PCM native, the decode stream's rate IS the output rate. Update the
-                    // connection's stream params so client_stream/start announces the native
-                    // format (MA accepts any rate and resamples on its end).
+                    // Announce exactly what the capture produces (codec, native rate, channels,
+                    // bit depth) in client_stream/start. Previously only rate/channels were set,
+                    // so with the pcm codec the start still said 'opus' and MA failed to decode.
                     if (_connection is not null)
                     {
+                        _connection.StreamParams.Codec = _capture.Codec;
                         _connection.StreamParams.SampleRate = _capture.OutputSampleRate;
                         _connection.StreamParams.Channels = _capture.NativeChannels;
+                        _connection.StreamParams.BitDepth = _capture.BitDepth;
                     }
                 }
             }

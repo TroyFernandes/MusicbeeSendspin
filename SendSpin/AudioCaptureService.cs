@@ -65,6 +65,10 @@ namespace MusicBeePlugin.SendSpin
         /// <summary>The decode stream's native channel count.</summary>
         public int NativeChannels => _sourceChannels;
         /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
+        /// <summary>The codec this capture emits (settings codec — 'pcm' passes raw 16-bit bytes).</summary>
+        public string Codec => _settings.AudioCodec;
+        /// <summary>Bit depth of the emitted stream.</summary>
+        public int BitDepth => _settings.BitDepth;
         public int OutputSampleRate => _outputSampleRate;
 
         /// <summary>

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>SendSpin.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The plugin's sources under test (same linked-file model the old console projects used;
+         compiled directly into this assembly, so internal types are visible). -->
+    <Compile Include="../../SendSpin/Noise/WireFraming.cs" Link="Src/WireFraming.cs" />
+    <Compile Include="../../SendSpin/Noise/NoiseSupport.cs" Link="Src/NoiseSupport.cs" />
+    <Compile Include="../../SendSpin/Noise/NoiseWireFraming.cs" Link="Src/NoiseWireFraming.cs" />
+    <Compile Include="../../SendSpin/Noise/PairingStore.cs" Link="Src/PairingStore.cs" />
+    <Compile Include="../../SendSpin/Noise/PairingToken.cs" Link="Src/PairingToken.cs" />
+    <Compile Include="../../SendSpin/ServerClock.cs" Link="Src/ServerClock.cs" />
+    <Compile Include="../../SendSpin/SourceConnection.cs" Link="Src/SourceConnection.cs" />
+    <Compile Include="../../SendSpin/AudioTypes.cs" Link="Src/AudioTypes.cs" />
+    <Compile Include="../../SendSpin/CaptureTimeline.cs" Link="Src/CaptureTimeline.cs" />
+    <Compile Include="../../SendSpin/RenderDevice.cs" Link="Src/RenderDevice.cs" />
+    <Compile Include="../../SendSpin/PluginSettings.cs" Link="Src/PluginSettings.cs" />
+    <Compile Include="../noise-interop/TestNoiseServer.cs" Link="Src/TestNoiseServer.cs" />
+    <Compile Include="../noise-interop/TestBase64Url.cs" Link="Src/TestBase64Url.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Noise.NET" Version="1.0.0" />
+    <PackageReference Include="libsodium" Version="1.0.22" />
+  </ItemGroup>
+</Project>

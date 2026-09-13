@@ -16,7 +16,12 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var uri = args.Length > 0 ? args[0] : "ws://192.168.1.10:8927/sendspin";
+        if (args.Length == 0)
+        {
+            Console.WriteLine("usage: live-handshake-probe ws://host:port/sendspin   (no default target — manual tool)");
+            return 1;
+        }
+        var uri = args[0];
         var suite = NoiseCipherSuite.ChaChaPoly;
         var identity = SendspinIdentity.Generate();
         Console.WriteLine($"target : {uri}");

@@ -52,13 +52,17 @@
     <PackageReference Include="System.Memory" Version="4.5.4" />
   </ItemGroup>
 
-  <!-- Native libsodium: embedded as an unmanaged assembly (Costura extracts + LoadLibrary's
-       it at module init — replaces the manual full-path preload for fresh installs). -->
+  <!-- Native libsodium: pulled from the libsodium NuGet package (see PackageReference above); -->
+  <!-- embedded as an unmanaged assembly (Costura extracts + LoadLibrary's it at module init). -->
+  <PropertyGroup>
+    <NuGetPackageRoot Condition="'$(NuGetPackageRoot)' == ''">$(UserProfile)/.nuget/packages/</NuGetPackageRoot>
+    <LibsodiumPkgDir>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'libsodium', '1.0.22', 'runtimes'))</LibsodiumPkgDir>
+  </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Native\x86\libsodium.dll">
+    <EmbeddedResource Include="$([MSBuild]::NormalizePath('$(LibsodiumPkgDir)', 'win-x86', 'native', 'libsodium.dll'))">
       <LogicalName>costura_win_x86.libsodium.dll</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Native\x64\libsodium.dll">
+    <EmbeddedResource Include="$([MSBuild]::NormalizePath('$(LibsodiumPkgDir)', 'win-x64', 'native', 'libsodium.dll'))">
       <LogicalName>costura_win_x64.libsodium.dll</LogicalName>
     </EmbeddedResource>
   </ItemGroup>

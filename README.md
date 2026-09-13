@@ -34,8 +34,8 @@ MusicBee playback (DSP, EQ, ReplayGain applied)
 ## Installation
 
 1. Build the plugin (`dotnet build MusicBeeSendSpin.csproj`) or grab a release
-2. Copy `mb_SendSpin.dll` **and the `Native/` folder** into MusicBee's Plugins folder
-   (keep the `Native/x64|` + `Native/x86/` subfolders together — they carry libsodium)
+2. Copy `mb_SendSpin.dll` into MusicBee's Plugins folder — it's a single file; all
+   dependencies (including the native libsodium for both x86 and x64) are embedded
 3. Restart MusicBee, enable the plugin (Preferences → Plugins)
 
 ## Setup
@@ -69,8 +69,9 @@ Order matters: MA waits ~5 s for audio after starting an input, so start MusicBe
   failed at startup; check the log for `[ERROR] [InitializeSourceDevice]`
 - **No audio in MA** — check order: MusicBee playing first, then start the Live Input in MA;
   make sure the source is paired (player shows paired, not "connected without pairing")
-- **Native load errors** (`Noise.Libsodium` type-init) — the `Native/x86` or `Native/x64`
-  folder is missing next to the plugin DLL; the log names the exact path probed
+- **Native load errors** (`Noise.Libsodium` type-init) — libsodium is embedded in the
+  plugin DLL and auto-extracted at load; if this still fails, drop a `Native/x64` or
+  `Native/x86` folder (from the `libsodium` NuGet package) next to the DLL as fallback
 - **Logs** — MusicBee's log (View → Error Log) carries every `[SendSpin]` line; connection,
   pairing, and clock-sync states are all logged under `[Source]`
 

@@ -1,0 +1,105 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITEA_TOKEN || github.token }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Read version + check if already released
+        id: version
+        shell: pwsh
+        run: |
+          $cs = "SendSpinPlugin.cs"
+          $major = (Select-String -Path $cs -Pattern '^\s*_about\.VersionMajor = (\d+);').Matches[0].Groups[1].Value
+          $minor = (Select-String -Path $cs -Pattern '^\s*_about\.VersionMinor = (\d+);').Matches[0].Groups[1].Value
+          $rev   = (Select-String -Path $cs -Pattern '^\s*_about\.Revision = (\d+);').Matches[0].Groups[1].Value
+
+          # Re-trigger guard: latest tag matches the version in the file -> already released
+          $latestTag = git describe --tags --abbrev=0 2>$null
+          if ($latestTag -and "v$major.$minor.$rev" -eq $latestTag) {
+            Write-Host "Version v$major.$minor.$rev already has a tag - skipping release."
+            "skip=true" >> $env:GITHUB_OUTPUT
+          }
+
+          $rev = $rev + 1
+          if ($rev -gt 9) { $rev = 0; $minor = $minor + 1; if ($minor -gt 9) { $minor = 0; $major = $major + 1 } }
+          $new = "v$major.$minor.$rev"
+          Write-Host "Bumping to $new"
+          "new=$new" >> $env:GITHUB_OUTPUT
+          "major=$major" >> $env:GITHUB_OUTPUT
+          "minor=$minor" >> $env:GITHUB_OUTPUT
+          "rev=$rev" >> $env:GITHUB_OUTPUT
+
+      - name: Write new version into SendSpinPlugin.cs
+        if: steps.version.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $cs = "SendSpinPlugin.cs"
+          $content = Get-Content $cs -Raw
+          $content = $content -replace '(?m)^(\s*_about\.VersionMajor = )\d+(;)', "`$1${{ steps.version.outputs.major }}`$2"
+          $content = $content -replace '(?m)^(\s*_about\.VersionMinor = )\d+(;)', "`$1${{ steps.version.outputs.minor }}`$2"
+          $content = $content -replace '(?m)^(\s*_about\.Revision = )\d+(;)', "`$1${{ steps.version.outputs.rev }}`$2"
+          Set-Content -Path $cs -Value $content -NoNewline
+          git diff $cs
+
+      - name: Restore dependencies
+        if: steps.version.outputs.skip != 'true'
+        shell: pwsh
+        run: dotnet restore MusicBeeSendSpin.csproj
+
+      - name: Build
+        if: steps.version.outputs.skip != 'true'
+        shell: pwsh
+        run: dotnet build MusicBeeSendSpin.csproj --configuration Release --no-restore
+
+      - name: Generate release notes
+        if: steps.version.outputs.skip != 'true'
+        id: release_notes
+        shell: pwsh
+        run: |
+          $previousTag = git describe --tags --abbrev=0 2>$null
+          if ($previousTag) {
+            $commits = git log "$previousTag..HEAD" --pretty=format:"- %s (%h)" --no-merges
+          } else {
+            $commits = git log -20 --pretty=format:"- %s (%h)" --no-merges
+          }
+          "## What's Changed`n`n$($commits -join "`n")" | Out-File -FilePath release_notes.md -Encoding utf8
+          Write-Host $commits
+
+      - name: Commit bump, push, and tag
+        if: steps.version.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          PUSH_TOKEN: ${{ secrets.GITEA_TOKEN || github.token }}
+        run: |
+          git config user.name "gitea-bot"
+          git config user.email "bot@gitea.local"
+          git add SendSpinPlugin.cs
+          git commit -m "chore: bump version to ${{ steps.version.outputs.new }}"
+          git tag ${{ steps.version.outputs.new }}
+          $remote = (git remote get-url origin) -replace '^https?://', "https://x:$PUSH_TOKEN@"
+          git remote set-url origin $remote
+          git push origin HEAD:main ${{ steps.version.outputs.new }}
+
+      - name: Create Gitea Release
+        if: steps.version.outputs.skip != 'true'
+        uses: akkuman/gitea-release-action@v1
+        with:
+          token: ${{ secrets.GITEA_TOKEN || github.token }}
+          files: |-
+            bin/Release/net48/mb_SendSpin.dll
+          name: ${{ steps.version.outputs.new }}
+          tag_name: ${{ steps.version.outputs.new }}
+          body_path: release_notes.md

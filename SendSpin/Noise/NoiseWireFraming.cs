@@ -130,7 +130,10 @@ namespace MusicBeePlugin.SendSpin.Noise
             _clientInitBytes = null;
             _serverInitBytes = null;
             _serverId = null;
+            _transport?.Dispose();
             _transport = null;
+            _pendingTransport?.Dispose();
+            _pendingTransport = null;
             _handshakeHash = null;
             _transportReady = false;
             _pendingReplyJson = null;
@@ -339,9 +342,12 @@ namespace MusicBeePlugin.SendSpin.Noise
             foreach (WireFrame f in EncryptOutbound(replyMsg.AsMemory()))
                 frames.Add(f);
 
-            // Commit the key swap (and the new session's PSK category with it).
+            // Commit the key swap (and the new session's PSK category with it). The retired
+            // transport is disposed like the SDK does — Noise.Transport is IDisposable and its
+            // cipher state should not outlive the session it belonged to.
             if (_pendingTransport is not null)
             {
+                _transport?.Dispose();
                 _transport = _pendingTransport;
                 _handshakeHash = _pendingHash;
                 _matchedPskCategory = _pendingCategory;

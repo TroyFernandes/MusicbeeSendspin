@@ -427,6 +427,11 @@ namespace MusicBeePlugin
                 // itself (its own clock is dead with a render device) — advance the queue.
                 LogInfo("SourceTrackEnded", "Track fully streamed — advancing to the next track");
                 _mbApiInterface.Player_PlayNextTrack();
+                // PlayNextTrack only moves the queue cursor when MusicBee is already stopped
+                // (the decode stream's end leaves it stopped) — kick playback so the next
+                // track actually starts instead of the queue sitting silent.
+                if (_mbApiInterface.Player_GetPlayState() != PlayState.Playing)
+                    _mbApiInterface.Player_PlayPause();
             }
             catch (Exception ex)
             {

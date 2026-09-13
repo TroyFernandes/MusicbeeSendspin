@@ -14,7 +14,13 @@ namespace MusicBeePlugin.SendSpin
     public interface IRenderAudioCapture : IDisposable
     {
         event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
+        /// <summary>Raised when the handed decode stream is fully consumed (track end).</summary>
+        event EventHandler? StreamEnded;
         bool IsCapturing { get; }
+        /// <summary>Audio time consumed from the stream, µs — this is MusicBee's playback position.</summary>
+        long CapturedAudioUs { get; }
+        /// <summary>Seeks the handed decode stream (capture timestamps unaffected).</summary>
+        void SeekTo(double seconds);
         /// <param name="ownsStreamHandle">
         /// False for a MusicBee-owned handle (render device): Stop() must not close it.
         /// </param>
@@ -68,9 +74,17 @@ namespace MusicBeePlugin.SendSpin
         private IRenderAudioCapture? _capture;
         private long _captureEpochUs;          // ServerClock value when the capture clock was ~0
         private int _lastPlayHandle;           // handle from the latest PlayToDevice (resume use)
+        private long _frozenPositionMs;        // playback position while not capturing
         private bool _active;
         private bool _disposed;
         private CancellationTokenSource? _resolveLoopCts;
+
+        /// <summary>Raised at natural track end (decode stream fully consumed): the plugin must advance MusicBee's queue.</summary>
+        public event EventHandler? TrackEnded;
+        /// <summary>Raised when MA stops the input while MusicBee is playing: the plugin should pause MusicBee.</summary>
+        public event EventHandler? PlaybackShouldPause;
+        /// <summary>Raised when MA starts the input while MusicBee was paused by MA: the plugin should resume MusicBee.</summary>
+        public event EventHandler? PlaybackShouldResume;
 
         public SourceRenderDevice(
             string deviceName,
@@ -100,6 +114,37 @@ namespace MusicBeePlugin.SendSpin
 
         /// <summary>The device name MusicBee shows in Preferences → Player → Output.</summary>
         public string DeviceName => _deviceName;
+
+        /// <summary>
+        /// MusicBee's playback position (ms) — polled via <c>GetPlayPosition()</c>. With a render
+        /// device the plugin pulls the decode stream, so THIS is the only progress clock.
+        /// </summary>
+        public long PlayPositionMs
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_capture is { IsCapturing: true })
+                        return _capture.CapturedAudioUs / 1000;
+                    return _frozenPositionMs;
+                }
+            }
+        }
+
+        /// <summary>MusicBee dragged the progress bar: seek the handed decode stream.</summary>
+        public void SetPlayPosition(long ms)
+        {
+            lock (_lock)
+            {
+                _frozenPositionMs = ms;
+                if (_capture is { IsCapturing: true })
+                {
+                    _capture.SeekTo(ms / 1000.0);
+                    _log($"[RenderDevice] seek to {ms} ms");
+                }
+            }
+        }
 
         // ------------------------------------------------------------------
         // Activation
@@ -144,6 +189,7 @@ namespace MusicBeePlugin.SendSpin
             _resolveLoopCts?.Cancel();
             StopCapture();
             _connection?.Stop();
+            _frozenPositionMs = 0;
             _log("[RenderDevice] deactivated");
         }
 
@@ -192,6 +238,10 @@ namespace MusicBeePlugin.SendSpin
                             if (!_active)
                                 return; // deactivated while resolving
                             _connection = conn;
+                            // Forward the MA pause/resume mirror to the plugin: connections are
+                            // recreated on every activation, so the plugin subscribes only to us.
+                            conn.SourceShouldPause += (_, e) => PlaybackShouldPause?.Invoke(this, e);
+                            conn.SourceShouldResume += (_, e) => PlaybackShouldResume?.Invoke(this, e);
                         }
                         conn.Start();
                         _log("[RenderDevice] connection started: " + url);
@@ -302,6 +352,7 @@ namespace MusicBeePlugin.SendSpin
                         // per-track capture restarts.
                         _captureEpochUs = ServerClock.NowUs();
                         _capture.AudioDataAvailable += OnCaptureAudio;
+                        _capture.StreamEnded += OnCaptureStreamEnded;
                     }
 
                     if (_capture.IsCapturing)
@@ -323,7 +374,10 @@ namespace MusicBeePlugin.SendSpin
                 lock (_lock)
                 {
                     if (_capture is { IsCapturing: true })
+                    {
+                        _frozenPositionMs = _capture.CapturedAudioUs / 1000;
                         _capture.Stop();
+                    }
                 }
 
                 // End the input stream only once nothing is feeding it, so no chunks trail the
@@ -334,6 +388,26 @@ namespace MusicBeePlugin.SendSpin
             {
                 _log("[RenderDevice] capture stop failed: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Natural end of the handed track. The input stream is ended (MA holds the Live Input
+        /// open for ~30 s of silence, so the next track's stream resumes it seamlessly) and the
+        /// plugin advances MusicBee's queue — MusicBee cannot detect the end itself.
+        /// </summary>
+        private void OnCaptureStreamEnded(object? sender, EventArgs e)
+        {
+            _log("[RenderDevice] track end (decode stream consumed)");
+            lock (_lock)
+            {
+                if (_capture is { IsCapturing: true })
+                {
+                    _frozenPositionMs = _capture.CapturedAudioUs / 1000;
+                    _capture.Stop();
+                }
+            }
+            _connection?.NotifyPlaybackStopped();
+            TrackEnded?.Invoke(this, EventArgs.Empty);
         }
 
         private void OnCaptureAudio(object? sender, AudioDataEventArgs e)

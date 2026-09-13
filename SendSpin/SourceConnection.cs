@@ -298,6 +298,8 @@ namespace MusicBeePlugin.SendSpin
             _bestRttUs = long.MaxValue;
             StreamStartAuthorized = false;
             IsStreamOpen = false;
+            _streamWasFed = false;
+            _maPausedPlayback = false;
             while (_audioQueue.TryDequeue(out _)) { }
             DisposeTimer(ref _audioPumpTimer);
             _burstRemaining = 0;
@@ -748,6 +750,10 @@ namespace MusicBeePlugin.SendSpin
 
         /// <summary>Whether an input stream is currently open (client_stream/start sent, not yet ended).</summary>
         public bool IsStreamOpen { get; private set; }
+        /// <summary>Whether the current/last open input stream actually carried audio (drives the MA-pause mirror).</summary>
+        private bool _streamWasFed;
+        /// <summary>Whether we asked the player to pause because MA stopped a fed input.</summary>
+        private bool _maPausedPlayback;
 
         // Bounded chunk queue: the capture feeds 20 ms Opus packets at 1x; a stalled writer must
         // not grow the queue unboundedly (spec: drop buffered backlog beyond a small bound and
@@ -811,6 +817,7 @@ namespace MusicBeePlugin.SendSpin
             // Wire type uses underscores (client_stream/start) — see the reference implementations.
             EnqueueJson(new JObject { ["type"] = "client_stream/start", ["payload"] = payload });
             IsStreamOpen = true;
+            _streamWasFed = true;
             _droppedBacklogChunks = 0;
             while (_audioQueue.TryDequeue(out _)) { }
             SetState(SourceConnectionState.Streaming);
@@ -821,6 +828,7 @@ namespace MusicBeePlugin.SendSpin
         {
             EnqueueJson(new JObject { ["type"] = "client_stream/end", ["payload"] = new JObject() });
             IsStreamOpen = false;
+            _streamWasFed = false;
             StreamStartAuthorized = false;
             while (_audioQueue.TryDequeue(out _)) { }
             DisposeTimer(ref _audioPumpTimer);
@@ -890,15 +898,29 @@ namespace MusicBeePlugin.SendSpin
                         // 20 ms pump coalesces the 1x capture feed to the wire.
                         _audioPumpTimer ??= new Timer(_ => PumpAudioOnce(), null,
                             TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20));
+                        if (_maPausedPlayback)
+                        {
+                            _maPausedPlayback = false;
+                            SourceShouldResume?.Invoke(this, EventArgs.Empty);
+                        }
                         StreamStartRequested?.Invoke(this, EventArgs.Empty);
                     }
                     break;
 
                 case "stop":
                     // Server-initiated stop: end the open stream, drop the queue, clear the grant.
+                    // If we were actively feeding this input, ask the player behind it to pause —
+                    // otherwise it would keep playing into a dead output. (Capture the fed state
+                    // BEFORE EndInputStream clears it.)
+                    bool wasFed = IsStreamOpen;
                     if (IsStreamOpen)
                         EndInputStream();
                     StreamStartAuthorized = false;
+                    if (wasFed)
+                    {
+                        _maPausedPlayback = true;
+                        SourceShouldPause?.Invoke(this, EventArgs.Empty);
+                    }
                     StreamStopRequested?.Invoke(this, EventArgs.Empty);
                     break;
             }
@@ -911,6 +933,10 @@ namespace MusicBeePlugin.SendSpin
         public event EventHandler? StreamStartRequested;
         /// <summary>Raised when the server commands this source to stop streaming.</summary>
         public event EventHandler? StreamStopRequested;
+        /// <summary>MA stopped the input while the source was feeding it: the player behind this source should pause.</summary>
+        public event EventHandler? SourceShouldPause;
+        /// <summary>MA started the input again after stopping it: the paused player should resume.</summary>
+        public event EventHandler? SourceShouldResume;
         // ------------------------------------------------------------------
         // Outbound plumbing
         // ------------------------------------------------------------------

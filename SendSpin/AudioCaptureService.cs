@@ -13,6 +13,9 @@ namespace MusicBeePlugin.SendSpin
     {
         private PluginSettings _settings;
         private int _streamHandle;
+        private int _sourceSampleRate = 48000;
+        private int _sourceChannels = 2;
+        private long _totalBytesRead;
         private bool _ownsStreamHandle = true;
         private int _mixerHandle;
         private bool _isCapturing;
@@ -45,7 +48,48 @@ namespace MusicBeePlugin.SendSpin
 
         public event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
 
+        /// <summary>
+        /// Raised when the decode stream reaches its end (BASS_ERROR_ENDED): the handed track has
+        /// been fully consumed. For a render device this is TRACK END — the plugin must advance
+        /// MusicBee's queue itself (MusicBee's own end-of-track clock is dead with output devices).
+        /// </summary>
+        public event EventHandler? StreamEnded;
+
         public bool IsCapturing => _isCapturing;
+
+        /// <summary>
+        /// Audio time consumed from the handed stream, in microseconds (16-bit output domain).
+        /// This IS MusicBee's playback position: with a render device the plugin pulls the decode
+        /// stream, so the decoded position is the only clock that exists.
+        /// </summary>
+        public long CapturedAudioUs
+        {
+            get
+            {
+                lock (_syncLock)
+                {
+                    long bytesPerSecond = _settings.SampleRate * _settings.Channels * Math.Max(1, _settings.BitDepth / 8);
+                    return _totalBytesRead * 1_000_000 / bytesPerSecond;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Seeks the handed decode stream. Timestamps are unaffected (capture time keeps running —
+        /// a live input has no seek concept); only which audio plays next changes.
+        /// </summary>
+        public void SeekTo(double seconds)
+        {
+            lock (_syncLock)
+            {
+                if (!_isCapturing || _streamHandle == 0)
+                    return;
+                long pos = (long)(seconds * _sourceSampleRate * _sourceChannels * 4); // float bytes
+                Bass.SetStreamPosition(_streamHandle, pos);
+                _paceClock.Restart();
+                Plugin.LogInfo("AudioCaptureService", $"Seek to {seconds:F1}s (byte pos {pos})");
+            }
+        }
 
         public AudioCaptureService(PluginSettings settings)
         {
@@ -72,6 +116,7 @@ namespace MusicBeePlugin.SendSpin
                     _streamHandle = streamHandle;
                     _ownsStreamHandle = ownsStreamHandle;
                     _paceClock.Restart();
+                    _totalBytesRead = 0;
                     
                     // Get stream info
                     if (!Bass.TryGetStreamInformation(streamHandle, out var sampleRate, out var channels, out var codec))
@@ -79,6 +124,8 @@ namespace MusicBeePlugin.SendSpin
                         Plugin.LogError("AudioCaptureService.Start", new Exception($"Failed to get stream information for handle {streamHandle}"));
                         return;
                     }
+                    _sourceSampleRate = sampleRate;
+                    _sourceChannels = channels;
                     
                     // Get stream flags to check decode mode
                     var flags = Bass.GetChannelFlags(streamHandle);
@@ -261,7 +308,6 @@ namespace MusicBeePlugin.SendSpin
             var cancellationToken = (CancellationToken)(parameter ?? CancellationToken.None);
             var streamToRead = _mixerHandle != 0 ? _mixerHandle : _streamHandle;
             var lastLogTime = DateTime.MinValue;
-            var totalBytesRead = 0L;
             var readAttempts = 0;
             var successfulReads = 0;
             
@@ -293,7 +339,7 @@ namespace MusicBeePlugin.SendSpin
                     if ((DateTime.Now - lastLogTime).TotalSeconds >= 5)
                     {
                         var errorCode = Bass.GetLastError();
-                        Plugin.LogInfo("CaptureLoop", $"Stats: attempts={readAttempts}, successful={successfulReads}, totalBytes={totalBytesRead}, lastRead={bytesRead}, bassError={errorCode}");
+                        Plugin.LogInfo("CaptureLoop", $"Stats: attempts={readAttempts}, successful={successfulReads}, totalBytes={_totalBytesRead}, lastRead={bytesRead}, bassError={errorCode}");
                         lastLogTime = DateTime.Now;
                     }
                     
@@ -320,7 +366,7 @@ namespace MusicBeePlugin.SendSpin
                         }
                         int pcmBytes = sampleCount * 2;
                         Buffer.BlockCopy(pcmShorts, 0, pcmBuffer, 0, pcmBytes);
-                        totalBytesRead += pcmBytes; // converted 16-bit bytes (drives pacing/stats)
+                        _totalBytesRead += pcmBytes; // converted 16-bit bytes (drives pacing/stats)
 
                         // Get timestamp for this audio chunk
                         var timestamp = GetTimestampMicroseconds();
@@ -356,7 +402,7 @@ namespace MusicBeePlugin.SendSpin
                         // end and the capture would run dry seconds into playback).
                         long bytesPerSecond = _settings.SampleRate * _settings.Channels * Math.Max(1, _settings.BitDepth / 8);
                         long elapsedUs = _paceClock.ElapsedTicks / (TimeSpan.TicksPerMillisecond / 1000);
-                        long producedUs = totalBytesRead * 1_000_000 / bytesPerSecond;
+                        long producedUs = _totalBytesRead * 1_000_000 / bytesPerSecond;
                         long aheadUs = producedUs - elapsedUs;
                         if (aheadUs > 0)
                         {
@@ -373,6 +419,13 @@ namespace MusicBeePlugin.SendSpin
                     {
                         // Error - bytesRead is -1
                         var errorCode = Bass.GetLastError();
+                        if (errorCode == 38) // BASS_ERROR_ENDED — decode stream fully consumed: TRACK END
+                        {
+                            Plugin.LogInfo("CaptureLoop", "Decode stream ended (track fully consumed)");
+                            _isCapturing = false;
+                            StreamEnded?.Invoke(this, EventArgs.Empty);
+                            break;
+                        }
                         if (readAttempts <= 5 || readAttempts % 100 == 0)
                         {
                             Plugin.LogInfo("CaptureLoop", $"Read returned {bytesRead}, BASS error code: {errorCode}");
@@ -387,7 +440,7 @@ namespace MusicBeePlugin.SendSpin
                 }
             }
             
-            Plugin.LogInfo("CaptureLoop", $"Capture loop ended. Total bytes read: {totalBytesRead}, Successful reads: {successfulReads}");
+            Plugin.LogInfo("CaptureLoop", $"Capture loop ended. Total bytes read: {_totalBytesRead}, Successful reads: {successfulReads}");
         }
 
         private IAudioEncoder? CreateEncoder(string codec)

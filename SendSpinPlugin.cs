@@ -30,6 +30,7 @@ namespace MusicBeePlugin
         private static SourceRenderDevice? _sourceRenderDevice;
         private static string? _sourceIdentityPath;
         private static string? _sourcePairingPath;
+        private static SourceConnection? _connectionEventsWiredFor;
 
         private static string? _settingsPath;
         private static bool _isInitialized;
@@ -360,6 +361,9 @@ namespace MusicBeePlugin
                     () => _sourcePairingStore!,
                     () => new AudioCaptureService(_settings ?? new PluginSettings()),
                     LogSource);
+                _sourceRenderDevice.TrackEnded += OnSourceTrackEnded;
+                _sourceRenderDevice.PlaybackShouldPause += OnMaSourceShouldPause;
+                _sourceRenderDevice.PlaybackShouldResume += OnMaSourceShouldResume;
 
                 LogInfo("SourceDevice", $"Render device '{_sourceRenderDevice.DeviceName}' ready; client_id={_sourceIdentity.PeerId}");
                 // The operator needs the token to pair: it lives in the settings dialog, but the
@@ -377,6 +381,56 @@ namespace MusicBeePlugin
                 // ex.ToString() walks the inner-exception chain (e.g. the native-load failure
                 // inside TypeInitializationException) — the message alone hides the cause.
                 LogError("InitializeSourceDevice", new Exception(ex.ToString(), ex));
+            }
+        }
+
+        private void OnMaSourceShouldPause(object? sender, EventArgs e)
+        {
+            try
+            {
+                // MA stopped the Live Input while MusicBee was playing into it: pause MusicBee,
+                // otherwise it would play silently and skip through the queue.
+                if (_mbApiInterface.Player_GetPlayState() == PlayState.Playing)
+                {
+                    LogInfo("MaMirror", "MA stopped the input — pausing MusicBee");
+                    _mbApiInterface.Player_PlayPause();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("OnMaSourceShouldPause", ex);
+            }
+        }
+
+        private void OnMaSourceShouldResume(object? sender, EventArgs e)
+        {
+            try
+            {
+                // MA started the Live Input again: resume the MusicBee playback we paused.
+                if (_mbApiInterface.Player_GetPlayState() == PlayState.Paused)
+                {
+                    LogInfo("MaMirror", "MA started the input — resuming MusicBee");
+                    _mbApiInterface.Player_PlayPause();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("OnMaSourceShouldResume", ex);
+            }
+        }
+
+        private void OnSourceTrackEnded(object? sender, EventArgs e)
+        {
+            try
+            {
+                // The handed decode stream was fully consumed: MusicBee cannot see this end
+                // itself (its own clock is dead with a render device) — advance the queue.
+                LogInfo("SourceTrackEnded", "Track fully streamed — advancing to the next track");
+                _mbApiInterface.Player_PlayNextTrack();
+            }
+            catch (Exception ex)
+            {
+                LogError("OnSourceTrackEnded", ex);
             }
         }
 
@@ -491,6 +545,25 @@ namespace MusicBeePlugin
                 LogError("SetActiveRenderingDevice", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// MusicBee polls this for the progress bar. With a render device the plugin pulls the
+        /// decode stream, so the plugin IS the playback clock — without this the bar stays at 0:00
+        /// and MusicBee never advances the queue.
+        /// </summary>
+        public int GetPlayPosition()
+        {
+            var device = _sourceRenderDevice;
+            if (device == null || !device.IsActive)
+                return 0;
+            return (int)Math.Min(device.PlayPositionMs, int.MaxValue);
+        }
+
+        /// <summary>MusicBee seeked (progress bar drag): reposition the handed decode stream.</summary>
+        public void SetPlayPosition(int ms)
+        {
+            _sourceRenderDevice?.SetPlayPosition(ms);
         }
 
         /// <summary>MusicBee starts playback on this device with a decode stream for us to read.</summary>

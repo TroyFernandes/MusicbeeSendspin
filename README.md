@@ -1,187 +1,97 @@
 # MusicBee SendSpin Plugin
 
-A MusicBee plugin that streams audio to SendSpin-compatible wireless speakers with synchronized multi-room playback.
+A MusicBee plugin that exposes playback as a **Music Assistant (Sendspin) render device**: select
+it in Preferences → Player → Output and everything MusicBee plays is streamed to Music Assistant
+as a Sendspin **source** — MusicBee's local output stays silent, with no mute hacks.
 
-## Features
+## How it works
 
-- **SendSpin Protocol Server** - Acts as a SendSpin server, allowing compatible clients to connect and receive audio
-- **Audio Capture** - Captures MusicBee's audio output including DSP effects and ReplayGain
-- **Multi-Codec Support** - Opus (recommended), FLAC, and PCM audio encoding
-- **Speaker Groups** - Organize speakers into groups for synchronized playback
-- **Individual Volume Control** - Control volume per speaker and per group
-- **Automatic Discovery** - mDNS support for automatic client discovery
-- **Low Latency** - Microsecond-level synchronization for perfect multi-room audio
+```text
+MusicBee playback (DSP, EQ, ReplayGain applied)
+  → captured from MusicBee's decode stream (BASS)
+  → encoded (Opus 48 kHz stereo by default)
+  → Sendspin source@v1 protocol over WebSocket + Noise_KKpsk2 encryption
+  → Music Assistant → whatever targets you pick there (speakers, AirPlay, web players, …)
+```
+
+- **Render device**: appears as "Music Assistant (Sendspin)" in MusicBee's output list; the
+  plugin feeds MusicBee's decode stream straight into the Sendspin connection.
+- **Music Assistant drives the stream**: audio flows when MA starts the input (Sendspin Source
+  Live Input); pause/stop in MusicBee ends it.
+- **Encrypted + paired**: full Sendspin security — Noise KKpsk2, pairing via a token you paste
+  into Music Assistant (Settings → Music Assistant tab → *Copy pairing token*). Pairing is
+  remembered; it survives restarts.
+- **mDNS discovery**: finds the Music Assistant server automatically, or set a manual
+  `host:port`.
 
 ## Requirements
 
-- MusicBee 3.4 or later
-- Windows 7/8/10/11
-- .NET Framework 4.8
-- BASS audio library (included with MusicBee)
+- MusicBee 3.4+ (32- or 64-bit), Windows
+- .NET Framework 4.8 (bundled with Windows 10/11)
+- A running [Music Assistant](https://www.music-assistant.io/) server with Sendspin enabled
+  (built-in), **and** the bundled **Sendspin Source** plugin in MA to expose the input
 
 ## Installation
 
-1. Build the plugin or download the release
-2. Copy `mb_SendSpin.dll` to your MusicBee Plugins folder:
-   - Usually: `%APPDATA%\MusicBee\Plugins\`
-3. Restart MusicBee
-4. Enable the plugin in MusicBee: Edit → Preferences → Plugins
+1. Build the plugin (`dotnet build MusicBeeSendSpin.csproj`) or grab a release
+2. Copy `mb_SendSpin.dll` **and the `Native/` folder** into MusicBee's Plugins folder
+   (keep the `Native/x64|` + `Native/x86/` subfolders together — they carry libsodium)
+3. Restart MusicBee, enable the plugin (Preferences → Plugins)
 
-## Configuration
+## Setup
 
-### Server Settings
+1. **MusicBee**: Tools → SendSpin Settings → *Music Assistant* tab — enable the render device,
+   copy the **pairing token** (also logged at startup)
+2. **Music Assistant**: Settings → Players → the new *Music Assistant (Sendspin)* player →
+   **Setup** → paste the token
+3. **Play**: start music in MusicBee first, then in MA select a target player → Browse →
+   *Sendspin Source* → the MusicBee input → Play
 
-- **Enable SendSpin Server** - Turn the server on/off
-- **Server Name** - Name shown to clients
-- **Server Port** - Default: 8927 (SendSpin standard port)
-- **Enable mDNS Discovery** - Allow clients to automatically discover the server
+Order matters: MA waits ~5 s for audio after starting an input, so start MusicBee playback first.
 
-### Audio Settings
+## Settings (Tools → SendSpin Settings)
 
-- **Audio Codec**
-  - **Opus** (Recommended) - Excellent quality at low bitrates, lowest latency
-  - **FLAC** - Lossless compression, higher bandwidth
-  - **PCM** - Uncompressed audio, highest bandwidth
-- **Sample Rate** - 44100, 48000, or 96000 Hz
-- **Channels** - Stereo or Mono
-- **Bit Depth** - 16-bit or 24-bit
-- **Opus Bitrate** - 32-512 kbps (higher = better quality)
+| Tab | What |
+| --- | --- |
+| **Audio** | Codec (Opus recommended), sample rate, channels, bit depth, Opus bitrate, MusicBee DSP/ReplayGain |
+| **Advanced** | Debug logging |
+| **Music Assistant** | Enable/disable, device name, mDNS or manual `host:port`, pairing token |
 
-### DSP Settings
+## Building from source
 
-- **Apply MusicBee DSP Effects** - Include equalizer, VST plugins, etc.
-- **ReplayGain** - Off, Track, Album, or Smart mode
-
-### Advanced Settings
-
-- **Client Buffer Size** - Higher = more stable, lower = less latency
-- **Debug Logging** - Enable for troubleshooting
-
-## Usage
-
-### Managing Speakers
-
-1. Open `Tools → SendSpin Speakers`
-2. Connected speakers appear in the "Speakers" list
-3. Create groups to organize speakers
-4. Move speakers between groups by selecting and clicking "Move to Group..."
-5. Adjust volume per speaker or per group
-
-### Playback
-
-Simply play music in MusicBee - it will automatically stream to all connected SendSpin clients!
-
-## SendSpin Protocol
-
-This plugin implements the SendSpin protocol as a server. For protocol details, see the [SendSpin Protocol Specification](../spec/README.md).
-
-### Supported Roles
-
-- **player** - Audio playback with synchronized timestamps
-- **controller** - Play/pause/volume control
-- **metadata** - Track title, artist, album info
-- **artwork** - Album artwork streaming
-
-## Building from Source
-
-### Prerequisites
-
-- Visual Studio 2022 or later
-- .NET Framework 4.8 SDK
-- NuGet packages (automatically restored):
-  - Sendspin.SDK
-  - Concentus (Opus encoder)
-  - Makaretu.Dns.Multicast (mDNS)
-
-### Build Steps
-
-1. Open `MusicBeeSendSpin.sln` in Visual Studio
-2. Restore NuGet packages
-3. Build in Release configuration
-4. Copy output to MusicBee Plugins folder
-
-### Debug Configuration
-
-1. Set the output path to your MusicBee Plugins folder
-2. Set MusicBee as the debug startup program
-3. Build and run in Debug mode
+- .NET SDK that can build **net48** (VS 2022 or `dotnet build`)
+- NuGet restores automatically: Noise.NET, libsodium, Concentus (Opus), Makaretu.Dns, Newtonsoft.Json
+- Debug build output goes straight to the MusicBee Plugins folder (see `.csproj`)
 
 ## Troubleshooting
 
-### No clients connecting
+- **Device doesn't appear in Output** — the render device is disabled in settings, or the plugin
+  failed at startup; check the log for `[ERROR] [InitializeSourceDevice]`
+- **No audio in MA** — check order: MusicBee playing first, then start the Live Input in MA;
+  make sure the source is paired (player shows paired, not "connected without pairing")
+- **Native load errors** (`Noise.Libsodium` type-init) — the `Native/x86` or `Native/x64`
+  folder is missing next to the plugin DLL; the log names the exact path probed
+- **Logs** — MusicBee's log (View → Error Log) carries every `[SendSpin]` line; connection,
+  pairing, and clock-sync states are all logged under `[Source]`
 
-- Check Windows Firewall is allowing connections on port 8927
-- Verify server is enabled in settings
-- Check clients are on the same network
+## Notes for maintainers
 
-### Audio stuttering
-
-- Increase client buffer size
-- Check network stability
-- Try a lower bitrate codec setting
-
-### High latency
-
-- Decrease client buffer size
-- Use Opus codec (lowest latency)
-- Ensure speakers support low-latency mode
-
-### Debug Logs
-
-Enable debug logging in settings and check:
-- MusicBee's log output (View → Error Log)
-- `%APPDATA%\MusicBee\SendSpinDebug.log`
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        MusicBee                              │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                   Audio Engine                        │   │
-│  │  (DSP, EQ, ReplayGain, etc.)                         │   │
-│  └───────────────────────┬─────────────────────────────┘   │
-│                          │                                   │
-│                          ▼                                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              SendSpin Plugin                          │   │
-│  │  ┌─────────────────┐  ┌─────────────────────────┐   │   │
-│  │  │ AudioCapture    │  │    SendSpinServer       │   │   │
-│  │  │ Service         │──│                         │   │   │
-│  │  │ (BASS + Encoder)│  │  ┌─────────────────┐   │   │   │
-│  │  └─────────────────┘  │  │ WebSocket       │   │   │   │
-│  │                       │  │ Connections     │   │   │   │
-│  │  ┌─────────────────┐  │  └────────┬────────┘   │   │   │
-│  │  │ GroupManager    │  │           │             │   │   │
-│  │  │ (Speakers/      │  └───────────┼─────────────┘   │   │
-│  │  │  Groups)        │              │                 │   │
-│  │  └─────────────────┘              │                 │   │
-│  └───────────────────────────────────┼─────────────────┘   │
-│                                      │                       │
-└──────────────────────────────────────┼───────────────────────┘
-                                       │
-                                       ▼
-                    ┌──────────────────────────────────┐
-                    │         Network (WebSocket)       │
-                    └─────┬─────────┬─────────┬────────┘
-                          │         │         │
-                          ▼         ▼         ▼
-                    ┌─────────┐ ┌─────────┐ ┌─────────┐
-                    │ Speaker │ │ Speaker │ │ Speaker │
-                    │   1     │ │   2     │ │   3     │
-                    └─────────┘ └─────────┘ └─────────┘
-```
+- The Sendspin transport (Noise handshake, framing, pairing) is a hand port of the
+  [sendspin-dotnet SDK](https://github.com/Sendspin/sendspin-dotnet) because the SDK targets
+  net8/net10 and MusicBee hosts net48 in-process. **See [PORT-MAPPING.md](PORT-MAPPING.md)
+  before changing `SendSpin/Noise/*`** — it maps every component to its SDK counterpart,
+  lists the deliberate divergences, and has the update runbook + re-verification ladder.
+- The legacy speaker mode (MusicBee acting as a Sendspin server / dialing speakers) was
+  removed; it lives on the `archive/speaker-mode` branch.
+- Tests: `tests/` — transport interop against the SDK's own test server, pairing/token
+  (spec reference vectors), and a full source-role loop against an in-process fake MA server.
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License — see LICENSE file for details.
 
 ## Credits
 
 - MusicBee Plugin API by Steven Mayall
-- SendSpin Protocol by the SendSpin Community
-- Opus codec by Xiph.org (Concentus implementation)
-
-## Contributing
-
-Contributions welcome! Please see the main repository's contributing guidelines.
+- SendSpin protocol by the Open Home Foundation (spec, aiosendspin, sendspin-dotnet)
+- Opus codec via Concentus (Xiph.org)

@@ -3,6 +3,13 @@ name: release
 on:
   push:
     branches: [main]
+    # Don't release for doc/meta-only pushes (readme, workflow edits, dotfiles)
+    paths-ignore:
+      - '**/*.md'
+      - '.gitea/**'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'LICENSE'
 
 jobs:
   release:

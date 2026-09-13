@@ -89,6 +89,7 @@ Order matters: MA waits ~5 s for audio after starting an input, so start MusicBe
   spec reference vectors, the full source-role wire loop, capture-timeline/pacing, settings
   persistence. No external servers — CI-friendly. Manual tools: `tests/live-handshake-probe`
   (needs a real MA server, URI passed explicitly) and `tests/noise-net48-smoke` (Windows-only).
+  To run the suite before every push, activate the hook once per clone: `git config core.hooksPath .githooks`.
 
 ## License
 

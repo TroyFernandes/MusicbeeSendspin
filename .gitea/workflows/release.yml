@@ -24,9 +24,9 @@ jobs:
         shell: pwsh
         run: |
           $cs = "SendSpinPlugin.cs"
-          $major = (Select-String -Path $cs -Pattern '^\s*_about\.VersionMajor = (\d+);').Matches[0].Groups[1].Value
-          $minor = (Select-String -Path $cs -Pattern '^\s*_about\.VersionMinor = (\d+);').Matches[0].Groups[1].Value
-          $rev   = (Select-String -Path $cs -Pattern '^\s*_about\.Revision = (\d+);').Matches[0].Groups[1].Value
+          $major = [int](Select-String -Path $cs -Pattern '^\s*_about\.VersionMajor = (\d+);').Matches[0].Groups[1].Value
+          $minor = [int](Select-String -Path $cs -Pattern '^\s*_about\.VersionMinor = (\d+);').Matches[0].Groups[1].Value
+          $rev   = [int](Select-String -Path $cs -Pattern '^\s*_about\.Revision = (\d+);').Matches[0].Groups[1].Value
 
           # Re-trigger guard: latest tag matches the version in the file -> already released
           $latestTag = git describe --tags --abbrev=0 2>$null

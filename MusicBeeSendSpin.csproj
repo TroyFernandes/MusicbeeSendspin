@@ -42,6 +42,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
 
+  <!-- Bundle all dependency dlls (managed + native libsodium) into mb_SendSpin.dll -->
+  <ItemGroup>
+    <PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="all" />
+    <PackageReference Include="Fody" Version="6.9.3" PrivateAssets="all" />
+  </ItemGroup>
+
   <!-- NuGet packages -->
   <ItemGroup>
     <PackageReference Include="Concentus" Version="2.2.2" />
@@ -53,14 +59,47 @@
     <PackageReference Include="System.Memory" Version="4.5.4" />
   </ItemGroup>
 
-  <!-- Native libraries that need to be included -->
+  <!-- Native libsodium: embedded as an unmanaged assembly (Costura extracts + LoadLibrary's
+       it at module init — replaces the manual full-path preload for fresh installs). -->
   <ItemGroup>
-    <None Include="Native\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Native\x86\libsodium.dll">
+      <LogicalName>costura_win_x86.libsodium.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Native\x64\libsodium.dll">
+      <LogicalName>costura_win_x64.libsodium.dll</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- The interop test has its own csproj; keep its files out of the plugin build. -->
   <ItemGroup>
     <Compile Remove="tests/**" />
   </ItemGroup>
+
+  <!-- Costura embeds these into mb_SendSpin.dll; drop the loose copies from the output dir. -->
+  <Target Name="RemoveEmbeddedCosturaFiles" AfterTargets="AfterBuild">
+    <ItemGroup>
+      <EmbeddedDlls Include="$(OutputPath)Costura.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Concentus.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Concentus.Oggfile.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Makaretu.Dns.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Makaretu.Dns.Multicast.dll" />
+      <EmbeddedDlls Include="$(OutputPath)SimpleBase.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Newtonsoft.Json.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Noise.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Buffers.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Diagnostics.DiagnosticSource.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Memory.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Net.IPNetwork.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Numerics.Vectors.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Common.Logging.dll" />
+      <EmbeddedDlls Include="$(OutputPath)Common.Logging.Core.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll" />
+      <EmbeddedDlls Include="$(OutputPath)System.ValueTuple.dll" />
+      <EmbeddedDlls Include="$(OutputPath)libsodium.dll" />
+      <EmbeddedDlls Include="$(OutputPath)x64\libsodium.dll" />
+      <EmbeddedDlls Include="$(OutputPath)x86\libsodium.dll" />
+    </ItemGroup>
+    <Delete Files="@(EmbeddedDlls)" />
+  </Target>
 
 </Project>

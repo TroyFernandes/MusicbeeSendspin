@@ -70,8 +70,10 @@ namespace MusicBeePlugin.SendSpin
                 // 193 = ERROR_BAD_EXE_FORMAT — the classic bitness mismatch signature.
                 log?.Invoke($"[NativeLibs] LoadLibrary FAILED ({error}{(error == 193 ? ", bad architecture for this process" : "")}): {candidate}");
             }
-
-            log?.Invoke("[NativeLibs] libsodium NOT preloaded — Noise will fail its own load; check that Native\\" + arch + "\\libsodium.dll exists");
+            // Normal on fresh installs: libsodium is embedded in mb_SendSpin.dll and Costura
+            // extracts + LoadLibrary's it at module init. This preload is just a fallback for
+            // deployments that still carry a Native\\ folder.
+            log?.Invoke("[NativeLibs] no libsodium.dll beside the plugin — relying on the Costura-embedded copy");
         }
 
         [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]

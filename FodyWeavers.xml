@@ -1,0 +1,10 @@
+<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <Costura IncludeDebugSymbols='false' CreateTemporaryAssemblies='true'>
+    <Unmanaged32Assemblies>
+      libsodium
+    </Unmanaged32Assemblies>
+    <Unmanaged64Assemblies>
+      libsodium
+    </Unmanaged64Assemblies>
+  </Costura>
+</Weavers>

@@ -46,11 +46,11 @@ jobs:
           $minor = [int](Select-String -Path $cs -Pattern '^\s*_about\.VersionMinor = (\d+);').Matches[0].Groups[1].Value
           $rev   = [int](Select-String -Path $cs -Pattern '^\s*_about\.Revision = (\d+);').Matches[0].Groups[1].Value
 
-          # Re-trigger guard: latest tag matches the version in the file -> already released
-          $latestTag = git describe --tags --abbrev=0 2>$null
+          # Re-trigger guard: our own bump push re-triggers this workflow at a tagged commit -> skip there only
+          $tagAtHead = git describe --tags --exact-match 2>$null
           $LASTEXITCODE = 0 # no tags yet (first release) is expected; don't let it fail the step
-          if ($latestTag -and "v$major.$minor.$rev" -eq $latestTag) {
-            Write-Host "Version v$major.$minor.$rev already has a tag - skipping release."
+          if ($tagAtHead) {
+            Write-Host "HEAD is tagged $tagAtHead (re-trigger of our own bump) - skipping release."
             "skip=true" >> $env:GITHUB_OUTPUT
           }
 

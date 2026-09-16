@@ -60,7 +60,7 @@ namespace MusicBeePlugin
             _about.PluginInfoVersion = PluginInfoVersion;
             _about.Name = "SendSpin";
             _about.Description = "Send MusicBee's playback to Music Assistant over the Sendspin protocol (source role)";
-            _about.Author = "SendSpin Community";
+            _about.Author = "TF";
             _about.TargetApplication = "";
             _about.Type = PluginType.General;
             // Version comes from the assembly metadata (csproj VersionMajor/Minor/Revision —

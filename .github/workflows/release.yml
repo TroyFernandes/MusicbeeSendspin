@@ -1,0 +1,58 @@
+name: Build and Release to GitHub
+
+# All CI (testing) happens in the Gitea instance; this workflow only handles the
+# GitHub release. It triggers when a Gitea-created v* tag arrives via the push
+# mirror (Gitea already ran the full test suite before tagging, and bumps the
+# version in SendSpinPlugin.cs before creating the tag — so the tag name IS the
+# release version).
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      shell: pwsh
+      run: dotnet restore MusicBeeSendSpin.csproj
+
+    - name: Build
+      shell: pwsh
+      run: dotnet build MusicBeeSendSpin.csproj --configuration Release --no-restore
+
+    - name: Generate release notes
+      id: release_notes
+      shell: pwsh
+      run: |
+        $currentTag = "${{ github.ref_name }}"
+        $previousTag = git tag --sort=-creatordate | Where-Object { $_ -ne $currentTag } | Select-Object -First 1
+        if ($previousTag) {
+          $commits = git log "$previousTag..$currentTag" --pretty=format:"- %s (%h)" --no-merges
+        } else {
+          $commits = git log "$currentTag" --pretty=format:"- %s (%h)" --no-merges
+        }
+        $notes = "## What's Changed`n`n$($commits -join "`n")"
+        $notes | Out-File -FilePath release_notes.md -Encoding utf8
+        Write-Host $notes
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        files: bin/Release/net48/mb_SendSpin.dll
+        name: ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        body_path: release_notes.md

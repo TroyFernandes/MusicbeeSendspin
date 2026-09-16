@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchManagers": ["nuget"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false,
+      "description": "MusicBee plugins must run on .NET Framework 4.8 (net48). Major bumps risk dropping net48/netstandard2.0 support (e.g. MQTTnet 5.x on Musicbee-MQTT) — evaluate each major manually against net48 before enabling it."
+    },
+    {
+      "matchPackageNames": ["Fody", "Costura.Fody"],
+      "enabled": false,
+      "description": "IL weavers run inside the net48 build and Costura embeds the output into mb_SendSpin.dll. A weaver update can break the build or the embedded-dll layout silently — update these manually and rebuild the full plugin."
+    },
+    {
+      "matchPackageNames": ["Noise.NET", "libsodium"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false,
+      "description": "Noise protocol stack (Noise.NET + native libsodium) implements the Sendspin pairing/handshake. Majors must be verified manually against the pairing flow and the wire-format tests."
+    },
+    {
+      "matchPackageNames": ["Makaretu.Dns.Multicast"],
+      "enabled": false,
+      "description": "mDNS discovery for the Music Assistant server. 0.x package written against the 0.27.0 API; newer versions change the API and may drop net48-usable assets."
+    }
+  ]
+}

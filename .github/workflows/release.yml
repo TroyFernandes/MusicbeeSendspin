@@ -6,6 +6,7 @@ name: Build and Release to GitHub
 # version in SendSpinPlugin.cs before creating the tag — so the tag name IS the
 # release version).
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'

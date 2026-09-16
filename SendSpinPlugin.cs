@@ -424,7 +424,14 @@ namespace MusicBeePlugin
             try
             {
                 // The handed decode stream was fully consumed: MusicBee cannot see this end
-                // itself (its own clock is dead with a render device) — advance the queue.
+                // itself (its own clock is dead with a render device) — advance the queue, unless
+                // the user asked to stop after this track: MusicBee is already stopped at this
+                // point, so just leave it that way.
+                if (_mbApiInterface.Player_GetStopAfterCurrentEnabled())
+                {
+                    LogInfo("SourceTrackEnded", "Stop-after-current enabled — leaving MusicBee stopped");
+                    return;
+                }
                 LogInfo("SourceTrackEnded", "Track fully streamed — advancing to the next track");
                 _mbApiInterface.Player_PlayNextTrack();
                 // PlayNextTrack only moves the queue cursor when MusicBee is already stopped

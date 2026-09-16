@@ -483,14 +483,19 @@ namespace MusicBeePlugin
             _ => RenderPlayState.Stopped,
         };
 
-        /// <summary>Opens a decode stream for the render device's resume path (plugin-owned handle).</summary>
+        /// <summary>
+        /// Opens a decode stream for the render device's resume path (plugin-owned handle).
+        /// DSP and ReplayGain are OFF: the stream is handed over raw — Music Assistant applies
+        /// any processing downstream, so MusicBee's own processing would just be duplicated (and
+        /// RG applied here could not be undone on the MA side).
+        /// </summary>
         private static int OpenStreamHandleForSource(string url)
         {
             return _mbApiInterface.Player_OpenStreamHandle(
                 url,
                 useMusicBeeSettings: true,
-                enableDsp: _settings?.EnableDsp ?? true,
-                gainType: _settings?.ReplayGainMode ?? ReplayGainMode.Smart);
+                enableDsp: false,
+                gainType: ReplayGainMode.Off);
         }
 
         // --- MusicBee render-device reflection surface (mirrors the HQPlayer plugin) ---

@@ -19,9 +19,6 @@ namespace MusicBeePlugin.SendSpin
         private TabPage _assistantTab = null!;
 
         // Audio settings
-        private ComboBox _codecCombobox = null!;
-        private NumericUpDown _opusBitrateNumeric = null!;
-        private Label _opusBitrateLabel = null!;
 
         // DSP settings
         private CheckBox _enableDspCheckbox = null!;
@@ -120,7 +117,7 @@ namespace MusicBeePlugin.SendSpin
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 6,
+                RowCount = 4,
                 Padding = new Padding(10)
             };
 
@@ -129,32 +126,16 @@ namespace MusicBeePlugin.SendSpin
 
             int row = 0;
 
-            // Codec
-            layout.Controls.Add(new Label { Text = "Audio Codec:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            _codecCombobox = new ComboBox
+            // Audio format info (PCM only — no codec options)
+            var audioFormatInfo = new Label
             {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            _codecCombobox.Items.AddRange(new object[] { "PCM — bit-perfect (Recommended)", "Opus (Compressed)" });
-            _codecCombobox.SelectedIndexChanged += CodecCombobox_SelectedIndexChanged;
-            layout.Controls.Add(_codecCombobox, 1, row);
-            row++;
-
-            // Channels / sample rate / bit depth are fixed: pcm = the file's native format,
-            // opus/flac = 48 kHz stereo 16-bit. Only the opus bitrate is configurable.
-
-            // Opus bitrate
-            _opusBitrateLabel = new Label { Text = "Opus Bitrate (kbps):", AutoSize = true, Dock = DockStyle.Fill };
-            layout.Controls.Add(_opusBitrateLabel, 0, row);
-            _opusBitrateNumeric = new NumericUpDown
-            {
-                Minimum = 32,
-                Maximum = 512,
-                Increment = 16,
+                Text = "Audio is streamed as bit-perfect 16-bit PCM at the source's native rate. Compression to other players is handled by Music Assistant, not this plugin.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
                 Dock = DockStyle.Fill
             };
-            layout.Controls.Add(_opusBitrateNumeric, 1, row);
+            layout.Controls.Add(audioFormatInfo, 0, row);
+            layout.SetColumnSpan(audioFormatInfo, 2);
             row++;
 
             // Separator
@@ -343,15 +324,7 @@ namespace MusicBeePlugin.SendSpin
 
         private void LoadSettings()
         {
-            // Audio
-            _codecCombobox.SelectedIndex = _settings.AudioCodec.ToLowerInvariant() switch
-            {
-                "opus" => 1,
-                _ => 0 // pcm
-            };
-
-            _opusBitrateNumeric.Value = _settings.OpusBitrate / 1000;
-
+            // Audio format is fixed (bit-perfect PCM); nothing to load.
             _enableDspCheckbox.Checked = _settings.EnableDsp;
             _replayGainCombobox.SelectedIndex = (int)_settings.ReplayGainMode;
 
@@ -369,15 +342,7 @@ namespace MusicBeePlugin.SendSpin
 
         private void SaveSettings()
         {
-            // Audio
-            _settings.AudioCodec = _codecCombobox.SelectedIndex switch
-            {
-                1 => "opus",
-                _ => "pcm"
-            };
-
-            _settings.OpusBitrate = (int)_opusBitrateNumeric.Value * 1000;
-
+            // Audio format is fixed (bit-perfect PCM); nothing to save.
             _settings.EnableDsp = _enableDspCheckbox.Checked;
             _settings.ReplayGainMode = (Plugin.ReplayGainMode)_replayGainCombobox.SelectedIndex;
 
@@ -394,13 +359,6 @@ namespace MusicBeePlugin.SendSpin
             _settings.SourceServerPort = (int)_assistantPortNumeric.Value;
         }
 
-        private void CodecCombobox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            // Opus bitrate only applies to Opus (pcm is bit-perfect, no knobs).
-            bool isOpus = _codecCombobox.SelectedIndex == 1;
-            _opusBitrateLabel.Enabled = isOpus;
-            _opusBitrateNumeric.Enabled = isOpus;
-        }
 
         private void OkButton_Click(object? sender, EventArgs e)
         {

@@ -34,7 +34,6 @@ namespace SendSpin.Tests
             public int NativeSampleRate => 48000;
             public int NativeChannels => 2;
             public int OutputSampleRate => 48000;
-            public string Codec => "pcm";
             public int BitDepth => 16;
 
             public void Start(int streamHandle, bool ownsStreamHandle)
@@ -136,7 +135,7 @@ namespace SendSpin.Tests
                 await TestAwait.WaitUntil(() => device.Connection!.StreamStartAuthorized, TimeSpan.FromSeconds(5), "start authorization");
                 fakeCapture.Emit(new byte[] { 1, 1, 1 }, 1_000);
                 JObject streamStart = await server.WaitFor("client_stream/start", TimeSpan.FromSeconds(10));
-                Assert.Equal(fakeCapture.Codec, streamStart["payload"]?["source"]?["codec"]?.Value<string>());
+                Assert.Equal("pcm", streamStart["payload"]?["source"]?["codec"]?.Value<string>());
 
                 fakeCapture.Emit(new byte[] { 2, 2, 2 }, 21_000);
                 // The first _binary is the stream-opening packet (1,1,1); the asserted one follows.

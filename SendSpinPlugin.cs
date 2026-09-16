@@ -346,12 +346,9 @@ namespace MusicBeePlugin
                     _sourceDiscovery.Start();
                 }
 
-                var streamParams = new SourceStreamParams
-                // Rate/channels/bit depth are always re-set from the capture at stream open;
-                // only the codec is seeded here.
-                {
-                    Codec = _settings?.AudioCodec ?? "opus",
-                };
+                // PCM is the only stream format; rate/channels/bit depth are re-set from the
+                // capture at stream open.
+                var streamParams = new SourceStreamParams();
                 _sourceRenderDevice = new SourceRenderDevice(
                     _settings?.RenderDeviceName ?? "Music Assistant (Sendspin)",
                     streamParams,

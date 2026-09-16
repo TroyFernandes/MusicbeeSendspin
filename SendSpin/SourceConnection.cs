@@ -35,17 +35,14 @@ namespace MusicBeePlugin.SendSpin
     /// <summary>The input-stream format announced in <c>client_stream/start</c>.</summary>
     public sealed class SourceStreamParams
     {
-        /// <summary>Codec: 'opus', 'flac', or 'pcm'.</summary>
-        public string Codec { get; set; } = "opus";
+        /// <summary>Codec — the plugin streams 16-bit PCM only.</summary>
+        public string Codec { get; set; } = "pcm";
         public int SampleRate { get; set; } = 48000;
         public int Channels { get; set; } = 2;
-        /// <summary>Ignored for opus (aiosendspin decodes at the 16-bit canonical).</summary>
         public int BitDepth { get; set; } = 16;
 
-        /// <summary>The spec's per-chunk cap is 150 ms of codec data, one codec unit per chunk.</summary>
-        public int MaxPacketBytes => Codec == "opus"
-            ? 128_000 / 8 * 150 / 1000                      // 150 ms at the 128 kbps default bitrate
-            : SampleRate * Channels * (BitDepth / 8) * 150 / 1000;
+        /// <summary>The spec's per-chunk cap is 150 ms of PCM data.</summary>
+        public int MaxPacketBytes => SampleRate * Channels * (BitDepth / 8) * 150 / 1000;
     }
 
     /// <summary>Args for the <see cref="SourceConnection.SourceRoleChanged"/> event.</summary>
@@ -744,7 +741,7 @@ namespace MusicBeePlugin.SendSpin
         // audio chunks flow only while the stream is open.
         // ------------------------------------------------------------------
 
-        /// <summary>The stream format announced in <c>client_stream/start</c>. Defaults to Opus 48 kHz stereo.</summary>
+        /// <summary>The stream format announced in <c>client_stream/start</c>. PCM at the capture's native rate, 16-bit stereo.</summary>
         public SourceStreamParams StreamParams { get; set; } = new SourceStreamParams();
 
         /// <summary>Whether an input stream is currently open (client_stream/start sent, not yet ended).</summary>
@@ -752,7 +749,7 @@ namespace MusicBeePlugin.SendSpin
         /// <summary>Whether we asked the player to pause because MA stopped a fed input.</summary>
         private bool _maPausedPlayback;
 
-        // Bounded chunk queue: the capture feeds 20 ms Opus packets at 1x; a stalled writer must
+        // Bounded chunk queue: the capture feeds 20 ms PCM chunks at 1x; a stalled writer must
         // not grow the queue unboundedly (spec: drop buffered backlog beyond a small bound and
         // resume from live capture). 50 chunks ≈ 1 s.
         private const int MaxQueuedChunks = 50;
@@ -780,8 +777,8 @@ namespace MusicBeePlugin.SendSpin
             if (!IsStreamOpen)
                 OpenInputStream();
 
-            // Spec bounds: one codec unit per chunk, ≤150 ms, ≥5 ms. The capture feeds 20 ms Opus
-            // packets; a larger packet means a misconfigured encoder — log and send anyway.
+            // Spec bounds: chunks ≤150 ms of PCM. The capture feeds 20 ms chunks;
+            // a larger chunk means a misbehaving capture — log and send anyway.
             if (packet.Length > StreamParams.MaxPacketBytes)
                 _log($"[Source] oversized chunk ({packet.Length} B > {StreamParams.MaxPacketBytes} B for 150 ms) — sending anyway");
 

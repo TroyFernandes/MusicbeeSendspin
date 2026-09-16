@@ -43,8 +43,6 @@
 
   <!-- NuGet packages -->
   <ItemGroup>
-    <PackageReference Include="Concentus" Version="2.2.2" />
-    <PackageReference Include="Concentus.OggFile" Version="1.0.4" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Noise.NET" Version="1.0.0" />
@@ -76,8 +74,6 @@
   <Target Name="RemoveEmbeddedCosturaFiles" AfterTargets="AfterBuild">
     <ItemGroup>
       <EmbeddedDlls Include="$(OutputPath)Costura.dll" />
-      <EmbeddedDlls Include="$(OutputPath)Concentus.dll" />
-      <EmbeddedDlls Include="$(OutputPath)Concentus.Oggfile.dll" />
       <EmbeddedDlls Include="$(OutputPath)Makaretu.Dns.dll" />
       <EmbeddedDlls Include="$(OutputPath)Makaretu.Dns.Multicast.dll" />
       <EmbeddedDlls Include="$(OutputPath)SimpleBase.dll" />

@@ -7,7 +7,7 @@ namespace MusicBeePlugin.SendSpin
 {
     /// <summary>
     /// The audio-capture seam the render device drives. Implemented by
-    /// <see cref="AudioCaptureService"/> in production (BASS decode → resample → Opus encode,
+    /// <see cref="AudioCaptureService"/> in production (BASS decode → 16-bit PCM,
     /// 20 ms chunks); tests inject a fake. <see cref="AudioDataEventArgs.Timestamp"/> is µs on the
     /// implementation's OWN monotonic clock (Stopwatch since service construction).
     /// </summary>
@@ -23,11 +23,9 @@ namespace MusicBeePlugin.SendSpin
         int NativeSampleRate { get; }
         /// <summary>The decode stream's native channel count.</summary>
         int NativeChannels { get; }
-        /// <summary>The codec the capture actually emits ('pcm', 'opus', or 'flac').</summary>
-        string Codec { get; }
         /// <summary>Bit depth of the emitted stream.</summary>
         int BitDepth { get; }
-        /// <summary>The actual output sample rate (native for PCM, mixer target for Opus).</summary>
+        /// <summary>The actual output sample rate (the source's native rate).</summary>
         int OutputSampleRate { get; }
         /// <summary>Seeks the handed decode stream (capture timestamps unaffected).</summary>
         void SeekTo(double seconds);
@@ -216,7 +214,7 @@ namespace MusicBeePlugin.SendSpin
             _frozenPositionMs = 0;
             _seekOffsetUs = 0;
             // Dispose the capture: the factory creates a fresh AudioCaptureService with the
-            // CURRENT settings (codec/rate may have changed since the capture was created).
+            // CURRENT settings (the rate may have changed since the capture was created).
             lock (_lock)
             {
                 if (_capture is not null)
@@ -406,12 +404,10 @@ namespace MusicBeePlugin.SendSpin
 
                     _capture.Start(streamHandle, ownsHandle);
 
-                    // Announce exactly what the capture produces (codec, native rate, channels,
-                    // bit depth) in client_stream/start. Previously only rate/channels were set,
-                    // so with the pcm codec the start still said 'opus' and MA failed to decode.
+                    // Announce exactly what the capture produces (native rate, channels, bit
+                    // depth) in client_stream/start; the codec is always PCM.
                     if (_connection is not null)
                     {
-                        _connection.StreamParams.Codec = _capture.Codec;
                         _connection.StreamParams.SampleRate = _capture.OutputSampleRate;
                         _connection.StreamParams.Channels = _capture.NativeChannels;
                         _connection.StreamParams.BitDepth = _capture.BitDepth;

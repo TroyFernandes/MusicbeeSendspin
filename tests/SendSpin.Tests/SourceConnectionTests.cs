@@ -296,7 +296,7 @@ namespace SendSpin.Tests
 
             JObject streamStart = await server.WaitFor("client_stream/start", TimeSpan.FromSeconds(10));
             var src = streamStart["payload"]?["source"] as JObject;
-            Assert.Equal("opus", src?["codec"]?.Value<string>());
+            Assert.Equal("pcm", src?["codec"]?.Value<string>());
             Assert.Equal(2, src?["channels"]?.Value<int>());
             Assert.Equal(48000, src?["sample_rate"]?.Value<int>());
             Assert.Equal(16, src?["bit_depth"]?.Value<int>());

@@ -29,8 +29,6 @@ namespace SendSpin.Tests
         {
             var settings = new PluginSettings
             {
-                AudioCodec = "opus",
-                OpusBitrate = 192000,
                 EnableDsp = false,
                 RenderDeviceName = "Custom Device",
                 SourceServerHost = "ma.example",
@@ -39,8 +37,6 @@ namespace SendSpin.Tests
             settings.Save(_path);
 
             var loaded = PluginSettings.Load(_path);
-            Assert.Equal("opus", loaded.AudioCodec);
-            Assert.Equal(192000, loaded.OpusBitrate);
             Assert.False(loaded.EnableDsp);
             Assert.Equal("Custom Device", loaded.RenderDeviceName);
             Assert.Equal("ma.example", loaded.SourceServerHost);
@@ -51,8 +47,8 @@ namespace SendSpin.Tests
         public void OldSettingsFile_WithRemovedKeys_LoadsWithDefaults()
         {
             // A pre-simplification settings file: codec parameters were removed from the schema
-            // (782fee1), the speaker-mode keys earlier still (archive/speaker-mode). Unknown keys
-            // must be ignored; known keys must still load.
+            // (782fee1), Opus settings later still, the speaker-mode keys earlier still
+            // (archive/speaker-mode). Unknown keys must be ignored; known keys must still load.
             const string legacyJson = @"{
                 ""AudioCodec"": ""opus"",
                 ""SampleRate"": 48000,
@@ -67,8 +63,6 @@ namespace SendSpin.Tests
             File.WriteAllText(_path, legacyJson);
 
             var loaded = PluginSettings.Load(_path);
-            Assert.Equal("opus", loaded.AudioCodec);
-            Assert.Equal(96000, loaded.OpusBitrate);
             Assert.True(loaded.RenderDeviceEnabled);
             // Removed schema keys must not resurrect as properties; defaults stand for the rest.
             Assert.True(loaded.EnableDsp);
@@ -79,8 +73,6 @@ namespace SendSpin.Tests
         public void MissingFile_LoadsDefaults()
         {
             var loaded = PluginSettings.Load(_path);
-            Assert.Equal("pcm", loaded.AudioCodec);
-            Assert.Equal(128000, loaded.OpusBitrate);
             Assert.True(loaded.RenderDeviceEnabled);
             Assert.True(loaded.SourceAutoDiscover);
         }
@@ -90,7 +82,6 @@ namespace SendSpin.Tests
         {
             File.WriteAllText(_path, "{ not json");
             var loaded = PluginSettings.Load(_path);
-            Assert.Equal("pcm", loaded.AudioCodec);
         }
     }
 }

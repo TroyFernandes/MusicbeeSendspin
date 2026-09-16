@@ -1,42 +1,17 @@
-# MusicBee SendSpin Plugin
+# MusicBee Sendspin Plugin
 
-A MusicBee plugin that exposes playback as a **Music Assistant (Sendspin) render device**: select
-it in Preferences → Player → Output and everything MusicBee plays is streamed to Music Assistant
-as a Sendspin **source** — MusicBee's local output stays silent, with no mute hacks.
-
-## How it works
-
-```text
-MusicBee playback (DSP, EQ, ReplayGain applied)
-  → captured from MusicBee's decode stream (BASS)
-  → encoded (Opus 48 kHz stereo by default)
-  → Sendspin source@v1 protocol over WebSocket + Noise_KKpsk2 encryption
-  → Music Assistant → whatever targets you pick there (speakers, AirPlay, web players, …)
-```
-
-- **Render device**: appears as "Music Assistant (Sendspin)" in MusicBee's output list; the
-  plugin feeds MusicBee's decode stream straight into the Sendspin connection.
-- **Music Assistant drives the stream**: audio flows when MA starts the input (Sendspin Source
-  Live Input); pause/stop in MusicBee ends it.
-- **Encrypted + paired**: full Sendspin security — Noise KKpsk2, pairing via a token you paste
-  into Music Assistant (Settings → Music Assistant tab → *Copy pairing token*). Pairing is
-  remembered; it survives restarts.
-- **mDNS discovery**: finds the Music Assistant server automatically, or set a manual
-  `host:port`.
+Experimental MusicBee plugin to send audio to Music Assistant as a Sendspin **source**.
 
 ## Requirements
 
-- MusicBee 3.4+ (32- or 64-bit), Windows
-- .NET Framework 4.8 (bundled with Windows 10/11)
-- A running [Music Assistant](https://www.music-assistant.io/) server with Sendspin enabled
-  (built-in), **and** the bundled **Sendspin Source** plugin in MA to expose the input
+- A running [Music Assistant](https://www.music-assistant.io/) server
 
 ## Installation
 
 1. Build the plugin (`dotnet build MusicBeeSendSpin.csproj`) or grab a release
-2. Copy `mb_SendSpin.dll` into MusicBee's Plugins folder — it's a single file; all
-   dependencies (including the native libsodium for both x86 and x64) are embedded
-3. Restart MusicBee, enable the plugin (Preferences → Plugins)
+2. Copy `mb_SendSpin.dll` into MusicBee's Plugins folder
+3. Add a firewall rule for windows (adjust port if you change it): ``New-NetFirewallRule -DisplayName "MusicBee SendSpin 8927" -Direction Inbound -Protocol TCP -LocalPort 8927 -Action Allow -Profile Domain,Private``
+4. Restart MusicBee, enable the plugin (Preferences → Plugins)
 
 ## Setup
 
@@ -45,58 +20,43 @@ MusicBee playback (DSP, EQ, ReplayGain applied)
 2. **Music Assistant**: Settings → Players → the new *Music Assistant (Sendspin)* player →
    **Setup** → paste the token
 3. **Play**: start music in MusicBee first, then in MA select a target player → Browse →
-   *Sendspin Source* → the MusicBee input → Play
-
-Order matters: MA waits ~5 s for audio after starting an input, so start MusicBee playback first.
+   *Sendspin Source* → the MusicBee input → Play 
+    - (note: wont show in the UI without audio playing)
 
 ## Settings (Tools → SendSpin Settings)
 
 | Tab | What |
 | --- | --- |
-| **Audio** | Codec (Opus recommended), sample rate, channels, bit depth, Opus bitrate, MusicBee DSP/ReplayGain |
+| **Audio** | MusicBee DSP/ReplayGain |
 | **Advanced** | Debug logging |
 | **Music Assistant** | Enable/disable, device name, mDNS or manual `host:port`, pairing token |
 
 ## Building from source
 
 - .NET SDK that can build **net48** (VS 2022 or `dotnet build`)
-- NuGet restores automatically: Noise.NET, libsodium, Concentus (Opus), Makaretu.Dns, Newtonsoft.Json
-- Debug build output goes straight to the MusicBee Plugins folder (see `.csproj`)
 
 ## Troubleshooting
 
+- **Firewall** - Usually is the main issue, you *must* create the rule yourself, the plugin won't. check that the rule is in place.
+  - `Get-NetFirewallRule -Direction Inbound | Get-NetFirewallPortFilter | Where-Object { $_.LocalPort -like '*8927*' }`
+  - `Get-NetFirewallRule -DisplayName "*MusicBee*"`
 - **Device doesn't appear in Output** — the render device is disabled in settings, or the plugin
   failed at startup; check the log for `[ERROR] [InitializeSourceDevice]`
 - **No audio in MA** — check order: MusicBee playing first, then start the Live Input in MA;
   make sure the source is paired (player shows paired, not "connected without pairing")
-- **Native load errors** (`Noise.Libsodium` type-init) — libsodium is embedded in the
-  plugin DLL and auto-extracted at load; if this still fails, drop a `Native/x64` or
-  `Native/x86` folder (from the `libsodium` NuGet package) next to the DLL as fallback
-- **Logs** — MusicBee's log (View → Error Log) carries every `[SendSpin]` line; connection,
-  pairing, and clock-sync states are all logged under `[Source]`
+- **Logs** — Always check the logs!
+  - In Musicbee → Help → Support → View Error Log
 
-## Notes for maintainers
+## Notes
 
-- The Sendspin transport (Noise handshake, framing, pairing) is a hand port of the
+- The Sendspin transport (Noise handshake, framing, pairing) is port of the
   [sendspin-dotnet SDK](https://github.com/Sendspin/sendspin-dotnet) because the SDK targets
-  net8/net10 and MusicBee hosts net48 in-process. **See [PORT-MAPPING.md](PORT-MAPPING.md)
-  before changing `SendSpin/Noise/*`** — it maps every component to its SDK counterpart,
-  lists the deliberate divergences, and has the update runbook + re-verification ladder.
-- The legacy speaker mode (MusicBee acting as a Sendspin server / dialing speakers) was
+  net8/net10 and MusicBee hosts net48 in-process. See [PORT-MAPPING.md](PORT-MAPPING.md)
+- The legacy speaker mode created before the source@v1 role (MusicBee acting as a Sendspin server / dialing speakers) was
   removed; it lives on the `archive/speaker-mode` branch.
-- Tests: `tests/SendSpin.Tests` — `dotnet test tests/SendSpin.Tests` runs everything in-process
-  (reference Noise server, fake Sendspin server on localhost): transport interop, pairing/token
-  spec reference vectors, the full source-role wire loop, capture-timeline/pacing, settings
-  persistence. No external servers — CI-friendly. Manual tools: `tests/live-handshake-probe`
-  (needs a real MA server, URI passed explicitly) and `tests/noise-net48-smoke` (Windows-only).
-  To run the suite before every push, activate the hook once per clone: `git config core.hooksPath .githooks`.
 
-## License
+## References
 
-MIT License — see LICENSE file for details.
-
-## Credits
-
-- MusicBee Plugin API by Steven Mayall
-- SendSpin protocol by the Open Home Foundation (spec, aiosendspin, sendspin-dotnet)
-- Opus codec via Concentus (Xiph.org)
+- [Sendspin Spec](https://github.com/Sendspin/spec)
+- [sendspin-dotnet](https://github.com/Sendspin/sendspin-dotnet)
+- [MusicBee-HQPlayer](https://github.com/tracemouse/MusicBee-HQPlayer)

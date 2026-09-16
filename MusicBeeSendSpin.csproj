@@ -6,13 +6,24 @@
     <OutputType>Library</OutputType>
     <AssemblyName>mb_SendSpin</AssemblyName>
     <RootNamespace>MusicBeePlugin</RootNamespace>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
 
+    <!-- SINGLE SOURCE OF TRUTH for the plugin version. The Gitea release workflow bumps
+         these three values (regex on the tag names); assembly metadata + the plugin's
+         About info are derived from them. -->
+    <VersionMajor>1</VersionMajor>
+    <VersionMinor>0</VersionMinor>
+    <VersionRevision>1</VersionRevision>
+    <Version>$(VersionMajor).$(VersionMinor).$(VersionRevision)</Version>
+    <FileVersion>$(Version).0</FileVersion>
+    <InformationalVersion>$(Version) (SendSpin)</InformationalVersion>
+    <!-- keep ProductVersion clean: no "+githash" suffix -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>portable</DebugType>

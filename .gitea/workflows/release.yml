@@ -43,10 +43,10 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $cs = "SendSpinPlugin.cs"
-          $major = [int](Select-String -Path $cs -Pattern '^\s*_about\.VersionMajor = (\d+);').Matches[0].Groups[1].Value
-          $minor = [int](Select-String -Path $cs -Pattern '^\s*_about\.VersionMinor = (\d+);').Matches[0].Groups[1].Value
-          $rev   = [int](Select-String -Path $cs -Pattern '^\s*_about\.Revision = (\d+);').Matches[0].Groups[1].Value
+          $csproj = "MusicBeeSendSpin.csproj"
+          $major = [int](Select-String -Path $csproj -Pattern '<VersionMajor>(\d+)</VersionMajor>').Matches[0].Groups[1].Value
+          $minor = [int](Select-String -Path $csproj -Pattern '<VersionMinor>(\d+)</VersionMinor>').Matches[0].Groups[1].Value
+          $rev   = [int](Select-String -Path $csproj -Pattern '<VersionRevision>(\d+)</VersionRevision>').Matches[0].Groups[1].Value
 
           # Re-trigger guard: our own bump push re-triggers this workflow at a tagged commit -> skip there only
           $tagAtHead = git describe --tags --exact-match 2>$null
@@ -65,7 +65,7 @@ jobs:
           "minor=$minor" >> $env:GITHUB_OUTPUT
           "rev=$rev" >> $env:GITHUB_OUTPUT
 
-      - name: Write new version into SendSpinPlugin.cs
+      - name: Write new version into MusicBeeSendSpin.csproj
         if: steps.version.outputs.skip != 'true'
         shell: pwsh
         env:
@@ -73,13 +73,13 @@ jobs:
           NEW_MINOR: ${{ steps.version.outputs.minor }}
           NEW_REV: ${{ steps.version.outputs.rev }}
         run: |
-          $cs = "SendSpinPlugin.cs"
-          $content = Get-Content $cs -Raw
-          $content = $content -replace '(?m)^(\s*_about\.VersionMajor = )\d+(;)', "`${1}$env:NEW_MAJOR`${2}"
-          $content = $content -replace '(?m)^(\s*_about\.VersionMinor = )\d+(;)', "`${1}$env:NEW_MINOR`${2}"
-          $content = $content -replace '(?m)^(\s*_about\.Revision = )\d+(;)', "`${1}$env:NEW_REV`${2}"
-          Set-Content -Path $cs -Value $content -NoNewline
-          git diff $cs
+          $csproj = "MusicBeeSendSpin.csproj"
+          $content = Get-Content $csproj -Raw
+          $content = $content -replace '(?m)^([ ]*<VersionMajor>)\d+(</VersionMajor>)', "`${1}$env:NEW_MAJOR`${2}"
+          $content = $content -replace '(?m)^([ ]*<VersionMinor>)\d+(</VersionMinor>)', "`${1}$env:NEW_MINOR`${2}"
+          $content = $content -replace '(?m)^([ ]*<VersionRevision>)\d+(</VersionRevision>)', "`${1}$env:NEW_REV`${2}"
+          Set-Content -Path $csproj -Value $content -NoNewline
+          git diff $csproj
 
       - name: Restore dependencies
         if: steps.version.outputs.skip != 'true'

@@ -63,9 +63,12 @@ namespace MusicBeePlugin
             _about.Author = "SendSpin Community";
             _about.TargetApplication = "";
             _about.Type = PluginType.General;
-            _about.VersionMajor = 1;
-            _about.VersionMinor = 0;
-            _about.Revision = 1;
+            // Version comes from the assembly metadata (csproj VersionMajor/Minor/Revision —
+            // the release workflow bumps those), so the DLL and About dialog always agree.
+            var pluginVersion = typeof(Plugin).Assembly.GetName().Version;
+            _about.VersionMajor = (short)pluginVersion.Major;
+            _about.VersionMinor = (short)pluginVersion.Minor;
+            _about.Revision = (short)pluginVersion.Build;
             _about.MinInterfaceVersion = MinInterfaceVersion;
             _about.MinApiRevision = MinApiRevision;
             _about.ReceiveNotifications = ReceiveNotificationFlags.PlayerEvents;

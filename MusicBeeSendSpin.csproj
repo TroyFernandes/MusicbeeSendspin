@@ -7,6 +7,9 @@
     <AssemblyName>mb_SendSpin</AssemblyName>
     <RootNamespace>MusicBeePlugin</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- CA analyzers are OFF by default for net48 targets — force them on (package + .editorconfig). -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -54,6 +57,8 @@
 
   <!-- NuGet packages -->
   <ItemGroup>
+    <!-- .NET analyzers driven by .editorconfig (CA rules); build-time only. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" PrivateAssets="all" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Noise.NET" Version="1.0.0" />

@@ -19,10 +19,8 @@ namespace MusicBeePlugin.SendSpin
         // other players is Music Assistant's job, so the plugin has no codec settings.
 
         // DSP Settings (MusicBee's own processing applied to the handed decode stream)
-        public bool EnableDsp { get; set; } = true;
-
-        [JsonConverter(typeof(StringEnumConverter))]
-        public Plugin.ReplayGainMode ReplayGainMode { get; set; } = Plugin.ReplayGainMode.Smart;
+        // Note: MusicBee's DSP/ReplayGain are NOT applied to the streamed audio — the decode
+        // stream is handed over raw so Music Assistant handles any processing downstream.
 
         // Source role (render device / Music Assistant) — MusicBee acts as a Sendspin client to MA
         public bool RenderDeviceEnabled { get; set; } = true; // Expose the Music Assistant render device
@@ -87,8 +85,6 @@ namespace MusicBeePlugin.SendSpin
         {
             return new PluginSettings
             {
-                EnableDsp = EnableDsp,
-                ReplayGainMode = ReplayGainMode,
                 RenderDeviceEnabled = RenderDeviceEnabled,
                 RenderDeviceName = RenderDeviceName,
                 SourceAutoDiscover = SourceAutoDiscover,

@@ -14,15 +14,9 @@ namespace MusicBeePlugin.SendSpin
 
         // Controls - initialized in InitializeComponents
         private TabControl _tabControl = null!;
-        private TabPage _audioTab = null!;
         private TabPage _advancedTab = null!;
         private TabPage _assistantTab = null!;
 
-        // Audio settings
-
-        // DSP settings
-        private CheckBox _enableDspCheckbox = null!;
-        private ComboBox _replayGainCombobox = null!;
 
         // Advanced settings
         private CheckBox _logDebugCheckbox = null!;
@@ -67,11 +61,9 @@ namespace MusicBeePlugin.SendSpin
             };
 
             // Create tabs
-            CreateAudioTab();
             CreateAdvancedTab();
             CreateAssistantTab();
 
-            _tabControl.TabPages.Add(_audioTab);
             _tabControl.TabPages.Add(_advancedTab);
             _tabControl.TabPages.Add(_assistantTab);
 
@@ -108,65 +100,6 @@ namespace MusicBeePlugin.SendSpin
             AcceptButton = _okButton;
             CancelButton = _cancelButton;
         }
-
-        private void CreateAudioTab()
-        {
-            _audioTab = new TabPage("Audio");
-
-            var layout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 4,
-                Padding = new Padding(10)
-            };
-
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-
-            int row = 0;
-
-            // Audio format info (PCM only — no codec options)
-            var audioFormatInfo = new Label
-            {
-                Text = "Audio is streamed as bit-perfect 16-bit PCM at the source's native rate. Compression to other players is handled by Music Assistant, not this plugin.",
-                AutoSize = true,
-                ForeColor = SystemColors.GrayText,
-                Dock = DockStyle.Fill
-            };
-            layout.Controls.Add(audioFormatInfo, 0, row);
-            layout.SetColumnSpan(audioFormatInfo, 2);
-            row++;
-
-            // Separator
-            layout.Controls.Add(new Label { Text = "MusicBee Audio Processing:", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Dock = DockStyle.Fill }, 0, row);
-            layout.SetColumnSpan(layout.GetControlFromPosition(0, row)!, 2);
-            row++;
-
-            // Enable DSP
-            _enableDspCheckbox = new CheckBox
-            {
-                Text = "Apply MusicBee DSP Effects",
-                AutoSize = true,
-                Dock = DockStyle.Fill
-            };
-            layout.Controls.Add(_enableDspCheckbox, 0, row);
-            layout.SetColumnSpan(_enableDspCheckbox, 2);
-            row++;
-
-            // Replay gain
-            layout.Controls.Add(new Label { Text = "Replay Gain:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
-            _replayGainCombobox = new ComboBox
-            {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            _replayGainCombobox.Items.AddRange(new object[] { "Off", "Track", "Album", "Smart" });
-            layout.Controls.Add(_replayGainCombobox, 1, row);
-
-            _audioTab.Controls.Add(layout);
-        }
-
         private void CreateAssistantTab()
         {
             _assistantTab = new TabPage("Music Assistant");
@@ -324,9 +257,8 @@ namespace MusicBeePlugin.SendSpin
 
         private void LoadSettings()
         {
-            // Audio format is fixed (bit-perfect PCM); nothing to load.
-            _enableDspCheckbox.Checked = _settings.EnableDsp;
-            _replayGainCombobox.SelectedIndex = (int)_settings.ReplayGainMode;
+            // Audio processing is intentionally not configurable (no DSP/ReplayGain on the
+            // streamed audio); nothing to load from the removed Audio tab.
 
             // Advanced
             _logDebugCheckbox.Checked = _settings.LogDebugInfo;
@@ -342,9 +274,7 @@ namespace MusicBeePlugin.SendSpin
 
         private void SaveSettings()
         {
-            // Audio format is fixed (bit-perfect PCM); nothing to save.
-            _settings.EnableDsp = _enableDspCheckbox.Checked;
-            _settings.ReplayGainMode = (Plugin.ReplayGainMode)_replayGainCombobox.SelectedIndex;
+            // Audio processing is intentionally not configurable; nothing to save.
 
             // Advanced
             _settings.LogDebugInfo = _logDebugCheckbox.Checked;

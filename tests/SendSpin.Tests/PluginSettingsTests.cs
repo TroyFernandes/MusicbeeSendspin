@@ -29,7 +29,6 @@ namespace SendSpin.Tests
         {
             var settings = new PluginSettings
             {
-                EnableDsp = false,
                 RenderDeviceName = "Custom Device",
                 SourceServerHost = "ma.example",
                 SourceServerPort = 8927,
@@ -37,7 +36,6 @@ namespace SendSpin.Tests
             settings.Save(_path);
 
             var loaded = PluginSettings.Load(_path);
-            Assert.False(loaded.EnableDsp);
             Assert.Equal("Custom Device", loaded.RenderDeviceName);
             Assert.Equal("ma.example", loaded.SourceServerHost);
             Assert.Equal(8927, loaded.SourceServerPort);
@@ -65,7 +63,6 @@ namespace SendSpin.Tests
             var loaded = PluginSettings.Load(_path);
             Assert.True(loaded.RenderDeviceEnabled);
             // Removed schema keys must not resurrect as properties; defaults stand for the rest.
-            Assert.True(loaded.EnableDsp);
             Assert.True(loaded.SourceAutoDiscover);
         }
 

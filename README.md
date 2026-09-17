@@ -19,7 +19,10 @@ Experimental MusicBee plugin to send audio to Music Assistant as a Sendspin **so
    copy the **pairing token** (also logged at startup)
 2. **Music Assistant**: Settings → Players → the new *Music Assistant (Sendspin)* player →
    **Setup** → paste the token
-3. **Play**: start music in MusicBee first, then in MA select a target player → Browse →
+3. **Change output device in MusicBee**: either do:
+    - Right Click the speaker icon in musicbee → Output To → Sendspin
+    - Edit → Edit Preferences → Player → sound device → Sendspin
+5. **Play**: start music in MusicBee first, then in MA select a target player → Browse →
    *Sendspin Source* → the MusicBee input → Play 
     - (note: wont show in the UI without audio playing)
 
@@ -27,7 +30,6 @@ Experimental MusicBee plugin to send audio to Music Assistant as a Sendspin **so
 
 | Tab | What |
 | --- | --- |
-| **Audio** | MusicBee DSP/ReplayGain |
 | **Advanced** | Debug logging |
 | **Music Assistant** | Enable/disable, device name, mDNS or manual `host:port`, pairing token |
 

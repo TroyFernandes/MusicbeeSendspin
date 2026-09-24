@@ -13,15 +13,11 @@ namespace MusicBeePlugin.SendSpin
         private readonly string? _pairingToken;
 
         // Controls - initialized in InitializeComponents
-        private TabControl _tabControl = null!;
-        private TabPage _advancedTab = null!;
-        private TabPage _assistantTab = null!;
-
 
         // Advanced settings
         private CheckBox _logDebugCheckbox = null!;
 
-        // Music Assistant (source render device) tab
+        // Music Assistant (source render device) settings
         private CheckBox _assistantEnabledCheckbox = null!;
         private TextBox _assistantNameTextbox = null!;
         private CheckBox _assistantAutoDiscoverCheckbox = null!;
@@ -53,20 +49,6 @@ namespace MusicBeePlugin.SendSpin
             MaximizeBox = false;
             MinimizeBox = false;
 
-            // Tab control
-            _tabControl = new TabControl
-            {
-                Dock = DockStyle.Top,
-                Height = 400
-            };
-
-            // Create tabs
-            CreateAdvancedTab();
-            CreateAssistantTab();
-
-            _tabControl.TabPages.Add(_advancedTab);
-            _tabControl.TabPages.Add(_assistantTab);
-
             // Buttons
             var buttonPanel = new FlowLayoutPanel
             {
@@ -94,27 +76,28 @@ namespace MusicBeePlugin.SendSpin
             buttonPanel.Controls.Add(_cancelButton);
             buttonPanel.Controls.Add(_okButton);
 
-            Controls.Add(_tabControl);
+            Controls.Add(CreateSettingsLayout());
             Controls.Add(buttonPanel);
 
             AcceptButton = _okButton;
             CancelButton = _cancelButton;
         }
-        private void CreateAssistantTab()
+        private TableLayoutPanel CreateSettingsLayout()
         {
-            _assistantTab = new TabPage("Music Assistant");
-
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
                 AutoSize = true,
+                AutoScroll = true,
                 Padding = new Padding(10)
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
 
             int row = 0;
+
+            // --- Music Assistant (source render device) ---
 
             _assistantEnabledCheckbox = new CheckBox
             {
@@ -210,25 +193,21 @@ namespace MusicBeePlugin.SendSpin
             };
             layout.Controls.Add(pairingInfo, 0, row);
             layout.SetColumnSpan(pairingInfo, 2);
+            row++;
 
-            _assistantTab.Controls.Add(layout);
-        }
+            // --- Advanced ---
 
-        private void CreateAdvancedTab()
-        {
-            _advancedTab = new TabPage("Advanced");
-
-            var layout = new TableLayoutPanel
+            var advancedHeader = new Label
             {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                Text = "Advanced",
                 AutoSize = true,
-                Padding = new Padding(10)
+                Dock = DockStyle.Fill,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 8, 0, 0)
             };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-
-            int row = 0;
+            layout.Controls.Add(advancedHeader, 0, row);
+            layout.SetColumnSpan(advancedHeader, 2);
+            row++;
 
             // Debug logging
             _logDebugCheckbox = new CheckBox
@@ -252,9 +231,8 @@ namespace MusicBeePlugin.SendSpin
             layout.Controls.Add(debugInfo, 0, row);
             layout.SetColumnSpan(debugInfo, 2);
 
-            _advancedTab.Controls.Add(layout);
+            return layout;
         }
-
         private void LoadSettings()
         {
             // Audio processing is intentionally not configurable (no DSP/ReplayGain on the

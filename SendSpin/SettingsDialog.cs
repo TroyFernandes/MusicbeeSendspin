@@ -111,7 +111,7 @@ namespace MusicBeePlugin.SendSpin
 
             var enabledInfo = new Label
             {
-                Text = "\u201CMusic Assistant (Sendspin)\u201D appears in Preferences \u2192 Player \u2192 Output. Selecting it routes playback to Music Assistant (local output is silent) \u2014 no local-mute hack.",
+                Text = "\u201CMusic Assistant (Sendspin)\u201D appears in Preferences \u2192 Player \u2192 Output.",
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Dock = DockStyle.Fill
@@ -140,15 +140,26 @@ namespace MusicBeePlugin.SendSpin
             layout.Controls.Add(_assistantHostTextbox, 1, row);
             row++;
 
-            layout.Controls.Add(new Label { Text = "Server port (0 = default 8927):", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
+            layout.Controls.Add(new Label { Text = "Server port:", AutoSize = true, Dock = DockStyle.Fill }, 0, row);
             _assistantPortNumeric = new NumericUpDown { Minimum = 0, Maximum = 65535, Dock = DockStyle.Fill };
             layout.Controls.Add(_assistantPortNumeric, 1, row);
+            row++;
+
+            var portInfo = new Label
+            {
+                Text = "The Sendspin endpoint\u2019s port (not the Music Assistant web UI port) \u2014 8927 by default. Ignored when \u201CServer host\u201D is empty; in manual mode 0 = 8927.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Dock = DockStyle.Fill
+            };
+            layout.Controls.Add(portInfo, 0, row);
+            layout.SetColumnSpan(portInfo, 2);
             row++;
 
             // Pairing: the token the operator pastes into Music Assistant (pairing_psk method).
             var pairingLabel = new Label
             {
-                Text = "Pairing \u2014 paste this token into Music Assistant (it pairs this MusicBee as a source client):",
+                Text = "Pairing Token:",
                 AutoSize = true,
                 Dock = DockStyle.Fill,
                 ForeColor = SystemColors.ControlText
@@ -186,7 +197,7 @@ namespace MusicBeePlugin.SendSpin
 
             var pairingInfo = new Label
             {
-                Text = "Pairing is required once: Music Assistant only accepts audio sources from paired clients. Rotating the token (e.g. after it leaked) requires deleting SendSpinSourcePairing.json and re-pairing.",
+                Text = "Pairing is required once: Music Assistant only accepts audio sources from paired clients. Rotating the token requires deleting SendSpinSourcePairing.json and re-pairing.",
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Dock = DockStyle.Fill

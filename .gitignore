@@ -135,3 +135,6 @@ _NCrunch*
 
 # Shepherd agent workspace
 .shepherd/
+
+# Local TODO notes
+TODO.md

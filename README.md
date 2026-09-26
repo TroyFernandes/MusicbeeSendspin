@@ -15,7 +15,7 @@ Experimental MusicBee plugin to send audio to Music Assistant as a Sendspin **so
 
 ## Setup
 
-1. **MusicBee**: Tools → SendSpin Settings → *Music Assistant* tab — enable the render device,
+1. **MusicBee**: Tools → SendSpin Settings → *Music Assistant* section — enable the render device,
    copy the **pairing token** (also logged at startup)
 2. **Music Assistant**: Settings → Players → the new *Music Assistant (Sendspin)* player →
    **Setup** → paste the token
@@ -26,12 +26,14 @@ Experimental MusicBee plugin to send audio to Music Assistant as a Sendspin **so
    *Sendspin Source* → the MusicBee input → Play 
     - (note: wont show in the UI without audio playing)
 
-## Settings (Tools → SendSpin Settings)
+## Settings (Tools → SendSpin Settings — a single page)
 
-| Tab | What |
+| Section | What |
 | --- | --- |
-| **Advanced** | Debug logging |
 | **Music Assistant** | Enable/disable, device name, mDNS or manual `host:port`, pairing token |
+| **Advanced** | Debug logging |
+
+> **Server port** = the *Sendspin endpoint* port (default **8927**), not the Music Assistant web-UI port (e.g. 8097). Only used in manual mode — ignored when auto-discover (mDNS) is on.
 
 ## Building from source
 

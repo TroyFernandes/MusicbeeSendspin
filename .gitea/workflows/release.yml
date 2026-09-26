@@ -112,9 +112,11 @@ jobs:
         run: |
           git config user.name "gitea-bot"
           git config user.email "bot@gitea.local"
-          git add SendSpinPlugin.cs
+          git add MusicBeeSendSpin.csproj
           git commit -m "chore: bump version to ${{ steps.version.outputs.new }}"
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed - nothing staged?" }
           git tag ${{ steps.version.outputs.new }}
+          if ($LASTEXITCODE -ne 0) { throw "git tag failed - tag already exists?" }
           $remote = (git remote get-url origin) -replace '^https?://', "https://x:$PUSH_TOKEN@"
           git remote set-url origin $remote
           git push origin HEAD:main ${{ steps.version.outputs.new }}

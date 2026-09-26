@@ -20,7 +20,7 @@
          About info are derived from them. -->
     <VersionMajor>1</VersionMajor>
     <VersionMinor>0</VersionMinor>
-    <VersionRevision>2</VersionRevision>
+    <VersionRevision>3</VersionRevision>
     <Version>$(VersionMajor).$(VersionMinor).$(VersionRevision)</Version>
     <FileVersion>$(Version).0</FileVersion>
     <InformationalVersion>$(Version) (SendSpin)</InformationalVersion>
